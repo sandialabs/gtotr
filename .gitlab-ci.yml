@@ -1,0 +1,53 @@
+stages:
+  - test
+  - docs
+
+variables:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_NO_CACHE_DIR: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONUNBUFFERED: "1"
+
+pytest:
+  stage: test
+  image: quay.sandia.gov/dice/rhel9-minimal/python
+  tags:
+    - do.small
+  before_script:
+    - microdnf update -y && microdnf install -y python3.12
+    - python3.12 -m venv .venv
+    - source .venv/bin/activate
+    - pip install --upgrade pip wheel
+    - pip install -e ".[dev]"
+  script:
+    - source .venv/bin/activate
+    - pytest -q --junitxml=test-results.xml
+  artifacts:
+    when: always
+    reports:
+      junit: test-results.xml
+    paths:
+      - test-results.xml
+  rules:
+    - when: always
+
+pages:
+  stage: docs
+  image: quay.sandia.gov/dice/rhel9-minimal/python
+  tags:
+    - do.small
+  before_script:
+    - microdnf update -y && microdnf install -y python3.12
+    - python3.12 -m venv .venv
+    - source .venv/bin/activate
+    - pip install --upgrade pip wheel
+    - pip install -e ".[docs]"
+  script:
+    - source .venv/bin/activate
+    - mkdocs build
+    - mv site public
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'

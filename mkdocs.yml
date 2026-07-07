@@ -1,0 +1,54 @@
+site_name: gtotr
+site_description: Generalized Tensor-on-Tensor Regression
+site_url: https://gtotr.readthedocs.io/
+repo_url: https://github.com/sandialabs/gtotr
+repo_name: sandialabs/gtotr
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Quickstart: quickstart.md
+  - Models: models.md
+  - Families and Links: families.md
+  - Fit Methods: fitmethods.md
+  - API Reference: api.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            show_signature_annotations: true
+            members_order: source
+            separate_signature: true
+
+            docstring_style: numpy
+            #docstring_section_style: table
+
+            merge_init_into_class: true
+            show_docstring_parameters: true
+            show_docstring_returns: true
+            show_docstring_examples: true
+            show_docstring_raises: true
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - tables
+  - def_list
+  - attr_list
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.inlinehilite

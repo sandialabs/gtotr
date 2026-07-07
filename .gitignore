@@ -1,0 +1,12 @@
+*~
+.*~
+*.egg-info
+dist
+build
+__pycache__
+.vs*
+.DS_Store
+*_checkpoints
+*.lock
+.venv
+site/
