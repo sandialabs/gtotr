@@ -1,12 +1,22 @@
+[![testing](https://github.com/sandialabs/gtotr/actions/workflows/run-tests.yml/badge.svg)](https://github.com/sandialabs/gtotr/actions/workflows/run-tests.yml)
+[![ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![mypy](https://img.shields.io/badge/type%20checked-mypy-039dfc)](https://mypy-lang.org)
+
 # Generalized Tensor-on-Tensor Regression(GToTR)
 
+`gtotr` is a Python package for generalized tensor-on-tensor regression, 
+extending [`statsmodels.GLM`](https://www.statsmodels.org/stable/glm.html) to cases 
+with tensor response and tensor covariates. The model parameters in `gtotr` are 
+estimated using maximum likelihood estimation associated with a low-rank model of the 
+parameter tensor. Currently, `gtotr` provides estimators using low-rank Canonical 
+Polyadic (CP) models.
 
 ## Getting Started
 
 ### Installing 
 
 ```bash
-$ pip install -e ".[dev]"
+$ python -m pip install .
 ```
 
 Test the install:
@@ -14,23 +24,14 @@ Test the install:
 ```bash
 $ python
 >>> import gtotr
->>> gtotr.__version__
-'0.3.0'
+>>> help(gtotr)
 ```
 
-### Running examples
+## Documentation
 
-Run the following from the top-level `gtotr` directory:
-
-```bash
-$ jupyter lab
-```
-
-In the browser window that opens, do the following:
-1. Navigate to the `tutorials` directory
+- Documentation: [gtotr.readthedocs.io](https://gtotr.readthedocs.io)
+- Tutorials: [Jupyter notebook tutorials](tutorials/)
 2. Open `gtotr-01-getting-started.ipynb`
-
-Tested using Python 3.12, 3.13, 3.14 (`uv`, `conda`, and `pyenv` virtual environments).
 
 ## Contributing
 
