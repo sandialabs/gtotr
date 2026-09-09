@@ -4,6 +4,8 @@
 
 ::: gtotr.models.gtotr_cp.gtotr_cp
 
+::: gtotr.models.gtotr_cp.ptotr_cp
+
 ::: gtotr.models.gtotr_cp.GToTR_CP
     options:
       members:
@@ -49,6 +51,14 @@
 ::: gtotr.fitmethods.cp_ao_glm.CPAOGLM
 
 ::: gtotr.fitmethods.cp_ao_gaussian_identity.CPAOGaussianIdentity
+
+::: gtotr.fitmethods.cp_ao_poisson_identity.CPAOPoissonIdentity
+
+## Solvers
+
+The Poisson + Identity fit method dispatches to a self-contained solver function.
+
+::: gtotr.solvers.cp_ao_backends.poisson_identity.cp_ao_poisson_identity_solve
 
 ## Tensor operations
 

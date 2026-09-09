@@ -18,6 +18,15 @@ Currently supported:
 - Log
 - Logit
 
+### Identity link for Poisson
+
+Identity is a blessed (supported) non-default link for the Poisson family. With the
+Identity link the mean is modeled directly as `mu = <X|B>` (rather than
+`mu = exp(<X|B>)` under the default Log link). This is the combination used by the
+specialized [`cp_ao_poisson_identity`](fitmethods.md#cp_ao_poisson_identity) fit method
+and the [`ptotr_cp`](models.md#ptotr-alias) constructor. The Poisson default link
+remains Log.
+
 ## String-based construction
 
 Families and links can be specified using strings:

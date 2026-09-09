@@ -9,10 +9,12 @@ import pyttb as ttb
 
 def contract_xb_cp(B: ttb.ktensor, X: ttb.tensor, normtype: float = 2) -> ttb.ktensor:
     """
-    Contract a CP tensor `B` with a tensor `X`.
+    Contract a CP tensor `B` with a tensor `X` to form the linear predictor <X|B>.
 
     The modes used in the contraction are the first Q modes, which are associated
-    with the covariates in a GToTR model.
+    with the covariates in a GToTR model. The result is the CP representation of the
+    per-observation mean/linear-predictor tensor; under an identity link this is the
+    mean directly.
 
     Parameters
     ----------
@@ -23,12 +25,14 @@ def contract_xb_cp(B: ttb.ktensor, X: ttb.tensor, normtype: float = 2) -> ttb.kt
         Tensor to contract with `B`.
 
     normtype : float, default=2
-        Normalization type passed to `pyttb.ktensor.normalize`.
+        Normalization type passed to `pyttb.ktensor.normalize`. Use ``normtype=2``
+        (Euclidean) for Gaussian/identity work; the Poisson + Identity solver
+        (``cp_ao_poisson_identity``) uses ``normtype=1``.
 
     Returns
     -------
     pyttb.ktensor
-        CP representation of the contracted tensor.
+        CP representation of the contracted tensor <X|B>.
     """
     Q = len(X.shape) - 1
     W = X.mttkrp([*B.factor_matrices[:Q], np.array([1])], Q)
