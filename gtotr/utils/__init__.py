@@ -1,4 +1,4 @@
-# gtoter/utils/__init__.py
+# gtotr/utils/__init__.py
 """Utility functions for GToTR models and fit methods."""
 
 from __future__ import annotations

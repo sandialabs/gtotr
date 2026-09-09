@@ -68,6 +68,8 @@ def _get_family(family: FamilySpec) -> Family:
         if key in ("binomial", "bernoulli"):
             return Binomial()
         if key == "poisson":
+            # Default link is Log; Identity is a blessed non-default link for Poisson
+            # (used by the cp_ao_poisson_identity fit method / ptotr_cp).
             return Poisson()
         raise ValueError(f"Unknown family '{family}'.")
 
