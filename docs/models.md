@@ -17,10 +17,9 @@ This returns a [GToTR_CP][gtotr.models.gtotr_cp.GToTR_CP] instance.
 
 ## PToTR alias
 
-Poisson-response Tensor-on-Tensor Regression (PToTR) predates `gtotr` and existed as
-its own package. It is the special case of `gtotr` using the Poisson family with an
-Identity link (mean `mu = <X|B>`). The [`ptotr_cp`][gtotr.models.gtotr_cp.ptotr_cp]
-constructor preserves that identity:
+Poisson-response Tensor-on-Tensor Regression (PToTR) is a special case of `gtotr`
+using the Poisson family with an Identity link (mean `mu = <X|B>`). The
+[`ptotr_cp`][gtotr.models.gtotr_cp.ptotr_cp] constructor preserves that identity:
 
 ```python
 model = gtotr.ptotr_cp(

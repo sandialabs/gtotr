@@ -1,24 +1,15 @@
 # gtotr/solvers/cp_ao_backends/poisson_identity.py
 """Self-contained multiplicative CP solver for Poisson family with Identity link.
 
-Ported (nearly verbatim on the update math) from the standalone ``ptotr`` package
-(``ptotr/ptotr_sparse.py``). Unlike the Gaussian/Identity path, this solver owns its
-whole outer/inner loop and convergence check, so it is a module-level function rather
-than a :class:`gtotr.solvers.cp_ao_backends.base.CPAOBackendBase` subclass. It is
-reached via the standard fit-method dispatch (see
+Unlike the Gaussian/Identity path, this solver owns its whole outer/inner loop and
+convergence check, so it is a module-level function rather than a
+:class:`gtotr.solvers.cp_ao_backends.base.CPAOBackendBase` subclass. It is reached
+via the standard fit-method dispatch (see
 :class:`gtotr.fitmethods.cp_ao_poisson_identity.CPAOPoissonIdentity`).
 
-Differences from the original ``ptotr_sparse`` (see ``/projects/BUGS_FOUND.md``):
-
-- Convergence and trace use gtotr's full Poisson ``family.loglike`` /
-  ``family.deviance`` (single source of truth), not ptotr's inline per-factor partial
-  log-likelihood (BUG-02).
-- The convergence ratio is guarded against divide-by-zero (BUG-03).
-- ``printitn=0`` is honored without raising (BUG-01).
-- Non-negativity of a user-supplied ``init`` and of the covariates ``X`` is validated
-  by default (``check_inputs=True``); the multiplicative-update convergence guarantee
-  assumes a non-negative initial ``B`` and non-negative ``X`` (BUG-10).
-- The default random init uses ``model._init_params`` (``numpy.random.default_rng``).
+Non-negativity of a user-supplied ``init`` and of the covariates ``X`` is validated
+by default (``check_inputs=True``); the multiplicative-update convergence guarantee
+assumes a non-negative initial ``B`` and non-negative ``X``.
 """
 
 from __future__ import annotations
@@ -221,10 +212,7 @@ def cp_ao_poisson_identity_solve(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Fit Poisson + Identity CP regression via multiplicative alternating updates.
 
-    Ported from ``ptotr``'s ``ptotr_sparse``. Handles both dense (``pyttb.tensor``) and
-    sparse (``pyttb.sptensor``) responses. The multiplicative Pi/Phi updates are kept
-    verbatim; convergence and the reported trace use gtotr's full Poisson
-    ``family.loglike`` / ``family.deviance``.
+    Handles both dense (``pyttb.tensor``) and sparse (``pyttb.sptensor``) responses.
 
     Parameters
     ----------

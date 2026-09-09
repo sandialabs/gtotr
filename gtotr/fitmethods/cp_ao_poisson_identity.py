@@ -12,8 +12,7 @@ class CPAOPoissonIdentity(FitMethodBase):
 
     Fits a CP-decomposed regression coefficient for a Poisson-response
     tensor-on-tensor regression under the Identity link (mean ``mu = <X|B>``) using
-    the multiplicative (majorize-minimize) alternating-optimization scheme ported from
-    the standalone ``ptotr`` package.
+    a multiplicative (majorize-minimize) alternating-optimization scheme.
 
     This method applies to models with the Poisson family and Identity link
     (``supports()`` gates on ``family_name == "poisson"`` and
@@ -43,7 +42,7 @@ class CPAOPoissonIdentity(FitMethodBase):
     method = "cp_ao_poisson_identity"
     description = (
         "Multiplicative CP alternating optimization for Poisson family with Identity "
-        "link (ported from ptotr)."
+        "link."
     )
 
     @classmethod

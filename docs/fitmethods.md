@@ -62,9 +62,9 @@ results = model.fit(
 ## `cp_ao_poisson_identity`
 
 This is a specialized CP alternating-optimization method for the Poisson family with
-identity link (mean `mu = <X|B>`), ported from the standalone `ptotr` package. It uses
-multiplicative (majorize-minimize) updates and is the **default** fit method for
-Poisson + Identity models (the generic `cp_ao_glm` remains available explicitly).
+identity link (mean `mu = <X|B>`). It uses multiplicative (majorize-minimize) updates
+and is the **default** fit method for Poisson + Identity models (the generic
+`cp_ao_glm` remains available explicitly).
 
 ```python
 results = model.fit(
