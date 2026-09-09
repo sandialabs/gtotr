@@ -18,8 +18,18 @@ class Poisson(Family, sm.families.Poisson):
     Notes
     -----
     - Default link is Log.
+    - Identity is a supported non-default link for Poisson: with the Identity link the
+      mean is modeled directly as ``mu = <X|B>``. This is the link used by the
+      ``cp_ao_poisson_identity`` fit method. Select it with ``link="identity"`` or via
+      the ``ptotr_cp`` convenience constructor.
     - `eps` is an optional clipping threshold used to avoid log(0) in log-likelihood
       calculations (if you override `loglike`).
+
+    References
+    ----------
+    Llosa-Vite, C., & Dunlavy, D. M. (2026). *Poisson-response Tensor-on-Tensor
+    Regression and Applications.* arXiv:2604.07377 [stat.ME].
+    [https://arxiv.org/abs/2604.07377](https://arxiv.org/abs/2604.07377)
     """
 
     family_name = "poisson"

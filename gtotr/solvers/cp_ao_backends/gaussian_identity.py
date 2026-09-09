@@ -121,7 +121,7 @@ class CPAOGaussianIdentityBackend(CPAOBackendBase):
         # U0 = np.linalg.solve(GG, Gy).T
         GG = np.asarray(GG, dtype=float)
         Gy = np.asarray(Gy, dtype=float)
-        U0 = np.linalg.lstsq(GG, Gy)[0].T
+        U0 = np.linalg.lstsq(GG, Gy, rcond=None)[0].T
 
         # find loglikelihood non-constant component and deviance
         sse = -2 * np.sum(Gy * U0.T) + np.sum((U0.T @ U0) * GG)

@@ -51,6 +51,8 @@ class GToTR_CP(GToTRBase):
         methods = set(self.fit_methods())
         if "cp_ao_gaussian_identity" in methods:
             return "cp_ao_gaussian_identity"
+        if "cp_ao_poisson_identity" in methods:
+            return "cp_ao_poisson_identity"
         if "cp_ao_glm" in methods:
             return "cp_ao_glm"
         # fallback to base behavior (will raise if none)
@@ -277,5 +279,95 @@ def gtotr_cp(
         covariates=covariates,
         family=family,
         link=link,
+        **model_options,
+    )
+
+
+def ptotr_cp(
+    *,
+    responses: ttb.tensor,
+    covariates: ttb.tensor,
+    **model_options: Any,
+) -> GToTR_CP:
+    """
+    Initialize a Poisson-response Tensor-on-Tensor Regression (PToTR) model.
+
+    This is a convenience alias for
+    [`gtotr_cp`][gtotr.models.gtotr_cp.gtotr_cp] with ``family="poisson"`` and
+    ``link="identity"`` preset. PToTR predates GToTR and existed as its own package;
+    this constructor preserves that identity while producing a model that is identical
+    to ``gtotr_cp(..., family="poisson", link="identity")``.
+
+    Parameters
+    ----------
+    responses : pyttb.tensor
+        Tensor of response variables, with sample size at the last mode.
+
+    covariates : pyttb.tensor
+        Tensor of covariates, with sample size at the last mode.
+
+    **model_options : Any
+        Additional keyword arguments passed to the model constructor. Passing
+        ``family`` or ``link`` is not allowed (they are preset).
+
+    Returns
+    -------
+    GToTR_CP
+        A [`GToTR_CP`][gtotr.models.gtotr_cp.GToTR_CP] model with the Poisson family
+        and Identity link, ready to be fitted with
+        ``model.fit(method="cp_ao_poisson_identity", ...)`` (also the default method
+        for this family/link).
+
+    Raises
+    ------
+    TypeError
+        If ``family`` or ``link`` is passed.
+
+    See Also
+    --------
+    gtotr.models.gtotr_cp.gtotr_cp : General GToTR CP model constructor.
+    gtotr.fitmethods.cp_ao_poisson_identity.CPAOPoissonIdentity : The fit method
+        (``cp_ao_poisson_identity``) used by default for Poisson + Identity models.
+
+    References
+    ----------
+    Llosa-Vite, C., & Dunlavy, D. M. (2026). *Poisson-response Tensor-on-Tensor
+    Regression and Applications.* arXiv:2604.07377 [stat.ME].
+    [https://arxiv.org/abs/2604.07377](https://arxiv.org/abs/2604.07377)
+
+    Examples
+    --------
+    Construct a PToTR model and confirm its family/link.
+
+    >>> import numpy as np
+    >>> import pyttb as ttb
+    >>> from gtotr import ptotr_cp, gtotr_cp
+    >>> rng = np.random.default_rng(0)
+    >>> X = ttb.tensor(rng.random((3, 5)))
+    >>> Y = ttb.tensor(rng.integers(0, 5, size=(4, 5)).astype(float))
+    >>> model = ptotr_cp(responses=Y, covariates=X)
+    >>> model.family.family_name
+    'poisson'
+    >>> model.family.link.link_name
+    'identity'
+
+    Fit the model. Poisson + Identity uses the specialized
+    ``cp_ao_poisson_identity`` method by default; non-negative covariates (as above)
+    satisfy its precondition.
+
+    >>> results = model.fit(rank=2, maxiters=20, printitn=0)
+    >>> results.method
+    'cp_ao_poisson_identity'
+    """
+    if "family" in model_options or "link" in model_options:
+        raise TypeError(
+            "ptotr_cp presets family='poisson' and link='identity'; "
+            "do not pass 'family'/'link'."
+        )
+    return gtotr_cp(
+        responses=responses,
+        covariates=covariates,
+        family="poisson",
+        link="identity",
         **model_options,
     )

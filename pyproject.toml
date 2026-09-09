@@ -11,6 +11,7 @@ dependencies = [
     "pyttb>=1.8.5",
     "numpy",
     "scipy",
+    "numpy_groupies",
     "statsmodels",
 ]
 
@@ -95,6 +96,7 @@ warn_unused_configs = true
 module = [
     "pyttb",
     "numpy",
+    "numpy_groupies",
     "statsmodels",
     "statsmodels.api",
     "scipy.special",

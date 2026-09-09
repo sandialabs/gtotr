@@ -16,6 +16,8 @@ It currently focuses on:
 - Gaussian, Binomial, and Poisson family support
 - Identity, Log, and Logit links
 - generic and specialized CP alternating-optimization fit methods
+- `ptotr_cp` alias for Poisson-response tensor-on-tensor regression (Poisson + Identity)
+- specialized `cp_ao_poisson_identity` fit method (default for Poisson + Identity)
 
 ## Example
 
