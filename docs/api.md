@@ -16,6 +16,17 @@
         - fit_methods
         - get_default_method
 
+::: gtotr.models.gtotr_cp.PToTR_CP
+    options:
+      members:
+        - predict
+        - loglike
+        - deviance
+        - contract_xb
+        - fit
+        - fit_methods
+        - get_default_method
+
 ## Results
 
 ::: gtotr.models.gtotr_base.ResultsBase
@@ -79,4 +90,5 @@ model types or fit methods.
         - fit_methods
         - get_default_method
         - register_fit_method
-        - get_coef
+
+::: gtotr.fitmethods.base.FitMethodBase

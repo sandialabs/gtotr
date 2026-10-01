@@ -10,13 +10,21 @@ import pyttb as ttb
 
 if TYPE_CHECKING:
     from gtotr.families import Family, Link
+
 from gtotr.utils import contract_xb_cp
+from gtotr.utils.likelihood import poisson_deviance_tensor, poisson_loglike_tensor
 
 from .gtotr_base import GToTRBase
 
 
 class GToTR_CP(GToTRBase):
-    """Model class for GToTR with CP decomposition."""
+    """Model class for GToTR with CP decomposition.
+
+    Notes
+    -----
+    The general ``GToTR_CP`` API is dense-oriented. Sparse tensor support is provided
+    by specialized subclasses and fit methods when explicitly documented.
+    """
 
     def __init__(
         self,
@@ -181,6 +189,176 @@ class GToTR_CP(GToTRBase):
         return ttb.ktensor(Binit).normalize()
 
 
+class PToTR_CP(GToTR_CP):
+    """CP Poisson-response tensor-on-tensor regression with Identity link.
+
+    ``PToTR_CP`` is the sparse-aware Poisson/Identity specialization of
+    [`GToTR_CP`][gtotr.models.gtotr_cp.GToTR_CP]. It accepts dense
+    ``pyttb.tensor`` or sparse ``pyttb.sptensor`` responses and covariates.
+
+    Sparse tensor support is intentionally scoped to this model class and to fit
+    methods that explicitly support it, currently ``cp_ao_poisson_identity``.
+    General GToTR model classes and fit methods should not be assumed sparse-safe.
+    """
+
+    def __init__(
+        self,
+        *,
+        responses: ttb.sptensor | ttb.tensor,
+        covariates: ttb.sptensor | ttb.tensor,
+        **model_options: Any,
+    ):
+        """Initialize a PToTR CP model with Poisson family and Identity link."""
+        if responses.shape[-1] != covariates.shape[-1]:
+            raise ValueError(
+                "responses and covariates must share the same sample mode size"
+            )
+        super().__init__(
+            responses=responses,  # type: ignore[arg-type]
+            covariates=covariates,  # type: ignore[arg-type]
+            family="poisson",
+            link="identity",
+            **model_options,
+        )
+
+    def predict(
+        self,
+        params: dict[str, ttb.ktensor],
+        *,
+        covariates: ttb.sptensor | ttb.tensor | None = None,
+        which: str = "mean",
+    ) -> ttb.tensor:
+        """
+        Predict responses from model parameters and dense or sparse covariates.
+
+        Parameters
+        ----------
+        params : dict[str, pyttb.ktensor]
+            Dictionary containing model parameters, including ``"coef"``.
+
+        covariates : pyttb.sptensor or pyttb.tensor, optional
+            Optional covariate tensor to use for prediction. If None, use the
+            covariates supplied at model initialization.
+
+        which : {"mean", "linear"}, default="mean"
+            If ``"linear"``, return the linear predictor. If ``"mean"``, return the
+            inverse-link-transformed mean response. For Poisson/Identity, these are the
+            same up to clipping/validation performed elsewhere.
+
+        Returns
+        -------
+        pyttb.tensor
+            Dense predicted responses. Predictions are currently returned dense even
+            when the input covariates are sparse.
+        """
+        B = params["coef"]
+        eta = self.contract_xb(B, covariates=covariates).to_tensor()
+        if which == "linear":
+            return eta
+        elif which == "mean":
+            return ttb.tensor(self.family.link.inverse(eta.data))
+        else:
+            raise ValueError(
+                f"Invalid value for 'which': {which}. Must be 'mean' or 'linear'."
+            )
+
+    def loglike(
+        self,
+        params: dict[str, ttb.ktensor],
+        *,
+        responses: ttb.sptensor | ttb.tensor | None = None,
+        covariates: ttb.sptensor | ttb.tensor | None = None,
+    ) -> float:
+        """
+        Calculate the Poisson log-likelihood for dense or sparse responses.
+
+        Parameters
+        ----------
+        params : dict[str, pyttb.ktensor]
+            Dictionary containing model parameters, including ``"coef"``.
+
+        responses : pyttb.sptensor or pyttb.tensor, optional
+            Optional response tensor. If None, use the responses supplied at model
+            initialization.
+
+        covariates : pyttb.sptensor or pyttb.tensor, optional
+            Optional covariate tensor. If None, use the covariates supplied at model
+            initialization.
+
+        Returns
+        -------
+        float
+            Poisson log-likelihood under the Identity-link mean
+            ``mu = <covariates | coef>``.
+        """
+        responses = self.responses if responses is None else responses
+        mu = self.predict(params, covariates=covariates, which="mean")
+        return poisson_loglike_tensor(responses, mu, eps=self.family.eps)
+
+    def deviance(
+        self,
+        params: dict[str, ttb.ktensor],
+        *,
+        responses: ttb.sptensor | ttb.tensor | None = None,
+        covariates: ttb.sptensor | ttb.tensor | None = None,
+    ) -> float:
+        """
+        Calculate the Poisson deviance for dense or sparse responses.
+
+        Parameters
+        ----------
+        params : dict[str, pyttb.ktensor]
+            Dictionary containing model parameters, including ``"coef"``.
+
+        responses : pyttb.sptensor or pyttb.tensor, optional
+            Optional response tensor. If None, use the responses supplied at model
+            initialization.
+
+        covariates : pyttb.sptensor or pyttb.tensor, optional
+            Optional covariate tensor. If None, use the covariates supplied at model
+            initialization.
+
+        Returns
+        -------
+        float
+            Poisson deviance under the Identity-link mean
+            ``mu = <covariates | coef>``.
+        """
+        responses = self.responses if responses is None else responses
+        mu = self.predict(params, covariates=covariates, which="mean")
+        return poisson_deviance_tensor(responses, mu, eps=self.family.eps)
+
+    def contract_xb(
+        self,
+        coef: ttb.ktensor,
+        *,
+        covariates: ttb.sptensor | ttb.tensor | None = None,
+        normtype: int = 2,
+    ) -> ttb.ktensor:
+        """
+        Compute the CP regression coefficient tensor applied to covariates.
+
+        Parameters
+        ----------
+        coef : pyttb.ktensor
+            The CP regression coefficient tensor in Kruskal form.
+
+        covariates : pyttb.sptensor or pyttb.tensor, optional
+            Covariate tensor to use for contraction. If None, use the covariates
+            supplied at model initialization.
+
+        normtype : int, default=2
+            Normalization type passed to ``pyttb.ktensor.normalize``.
+
+        Returns
+        -------
+        pyttb.ktensor
+            The CP regression coefficient tensor applied to covariates.
+        """
+        covariates = self.covariates if covariates is None else covariates
+        return contract_xb_cp(coef, covariates, normtype=normtype)
+
+
 def gtotr_cp(
     *,
     responses: ttb.tensor,
@@ -193,11 +371,7 @@ def gtotr_cp(
     Initialize a `GToTR_CP` model.
 
     This is a convenience wrapper that simply initializes a
-    [`GToTR_CP`][gtotr.models.gtotr_cp.GToTR_CP] model instance. The actual fitting
-    logic is implemented in the [`GToTR_CP`][gtotr.models.gtotr_cp.GToTR_CP] class,
-    which allows for more flexible usage if users want to call the fit method directly
-    with custom parameters or access other methods of the
-    [`GToTR_CP`][gtotr.models.gtotr_cp.GToTR_CP] class.
+    [`GToTR_CP`][gtotr.models.gtotr_cp.GToTR_CP] model instance.
 
     Parameters
     ----------
@@ -205,24 +379,14 @@ def gtotr_cp(
         Tensor of response variables, with sample size at the last mode.
 
     covariates : pyttb.tensor
-        Tensor of covariates, with sample size at the last mode
+        Tensor of covariates, with sample size at the last mode.
 
     family : str or gtotr.families.Family, optional
         The family of the model, which determines the likelihood function and link
-        function used in the regression. This can be specified as a string, such as
-        ``"poisson"`` or ``"gaussian"``, or as a GToTR family object such as
-        [`Gaussian`][gtotr.families.Gaussian],
-        [`Binomial`][gtotr.families.Binomial], or
-        [`Poisson`][gtotr.families.Poisson]. If not specified, the default is
-        Gaussian.
+        function used in the regression.
 
     link : str or gtotr.families.links.Link, optional
-        The link function to use in the regression. This can be specified as a
-        string, such as ``"log"``, ``"identity"``, or ``"logit"``, or as a GToTR
-        link object such as [`Identity`][gtotr.families.links.Identity],
-        [`Log`][gtotr.families.links.Log], or
-        [`Logit`][gtotr.families.links.Logit]. If not specified, the default link
-        function for the selected family is used.
+        The link function to use in the regression.
 
     **model_options : Any
         Additional keyword arguments passed to the model constructor.
@@ -230,49 +394,7 @@ def gtotr_cp(
     Returns
     -------
     GToTR_CP
-        An instance of the [`GToTR_CP`][gtotr.models.gtotr_cp.GToTR_CP] model
-        initialized with the provided responses and covariates, ready to be fitted
-        using the fit method.
-
-    Examples
-    --------
-    Import required packages.
-
-    >>> import numpy as np
-    >>> import pyttb as ttb
-    >>> from gtotr import gtotr_cp
-    >>> from gtotr.utils import contract_xb_cp
-
-    Create data for family="gaussian", link="identity".
-
-    >>> # metadata
-    >>> nobs = 20
-    >>> cov_shape = (3, 5, nobs)
-    >>> resp_shape = (4, 5, 6, nobs)
-    >>> rank = 2
-    >>> rng = np.random.default_rng(1234)
-    >>> # covariates
-    >>> X = ttb.tensor(rng.normal(size=cov_shape))
-    >>> # coefficient tensor; low-rank CP structure, normtype=2 for Gaussian data
-    >>> Vs = [rng.normal(size=(n, rank)) for n in cov_shape[:-1]]
-    >>> Us = [rng.normal(size=(m, rank)) for m in resp_shape[:-1]]
-    >>> B_true = ttb.ktensor(Vs + Us).normalize(normtype=2)
-    >>> # responses; mu = eta for identity link
-    >>> eta = contract_xb_cp(B_true, X, normtype=2).to_tensor()
-    >>> mu = eta
-    >>> noise_sd = 0.05
-    >>> Y = ttb.tensor(mu.data + rng.normal(scale=noise_sd, size=mu.shape))
-
-    Create and fit model.
-
-    >>> model = gtotr_cp(responses=Y, covariates=X, family="gaussian", link="identity")
-    >>> results = model.fit(rank=rank, printitn=0)
-
-    Make predictions and evaluate fit.
-
-    >>> Yhat = results.predict()
-    >>> residual = (Y.data - Yhat.data).flatten()
-    >>> rmse = np.sqrt(np.mean(residual**2))
+        A dense-oriented CP GToTR model.
     """
     return GToTR_CP(
         responses=responses,
@@ -285,38 +407,39 @@ def gtotr_cp(
 
 def ptotr_cp(
     *,
-    responses: ttb.tensor,
-    covariates: ttb.tensor,
+    responses: ttb.sptensor | ttb.tensor,
+    covariates: ttb.sptensor | ttb.tensor,
     **model_options: Any,
-) -> GToTR_CP:
+) -> PToTR_CP:
     """
     Initialize a Poisson-response Tensor-on-Tensor Regression (PToTR) model.
 
-    This is a convenience alias for
-    [`gtotr_cp`][gtotr.models.gtotr_cp.gtotr_cp] with ``family="poisson"`` and
-    ``link="identity"`` preset. PToTR predates GToTR and existed as its own package;
-    this constructor preserves that identity while producing a model that is identical
-    to ``gtotr_cp(..., family="poisson", link="identity")``.
+    This constructor returns a [`PToTR_CP`][gtotr.models.gtotr_cp.PToTR_CP] model,
+    which is the Poisson/Identity specialization of
+    [`GToTR_CP`][gtotr.models.gtotr_cp.GToTR_CP].
+
+    Unlike the general ``gtotr_cp`` constructor, ``ptotr_cp`` accepts either dense
+    ``pyttb.tensor`` or sparse ``pyttb.sptensor`` responses and covariates. Sparse
+    tensor support is scoped to fit methods that explicitly support it, currently
+    ``cp_ao_poisson_identity``.
 
     Parameters
     ----------
-    responses : pyttb.tensor
+    responses : pyttb.sptensor or pyttb.tensor
         Tensor of response variables, with sample size at the last mode.
 
-    covariates : pyttb.tensor
+    covariates : pyttb.sptensor or pyttb.tensor
         Tensor of covariates, with sample size at the last mode.
 
     **model_options : Any
         Additional keyword arguments passed to the model constructor. Passing
-        ``family`` or ``link`` is not allowed (they are preset).
+        ``family`` or ``link`` is not allowed because they are preset to
+        ``family="poisson"`` and ``link="identity"``.
 
     Returns
     -------
-    GToTR_CP
-        A [`GToTR_CP`][gtotr.models.gtotr_cp.GToTR_CP] model with the Poisson family
-        and Identity link, ready to be fitted with
-        ``model.fit(method="cp_ao_poisson_identity", ...)`` (also the default method
-        for this family/link).
+    PToTR_CP
+        A Poisson/Identity CP tensor-on-tensor regression model.
 
     Raises
     ------
@@ -325,49 +448,23 @@ def ptotr_cp(
 
     See Also
     --------
-    gtotr.models.gtotr_cp.gtotr_cp : General GToTR CP model constructor.
-    gtotr.fitmethods.cp_ao_poisson_identity.CPAOPoissonIdentity : The fit method
-        (``cp_ao_poisson_identity``) used by default for Poisson + Identity models.
+    gtotr.models.gtotr_cp.gtotr_cp : General dense GToTR CP model constructor.
+    gtotr.fitmethods.cp_ao_poisson_identity.CPAOPoissonIdentity : The sparse-aware
+        Poisson/Identity fit method.
 
     References
     ----------
     Llosa-Vite, C., & Dunlavy, D. M. (2026). *Poisson-response Tensor-on-Tensor
     Regression and Applications.* arXiv:2604.07377 [stat.ME].
     [https://arxiv.org/abs/2604.07377](https://arxiv.org/abs/2604.07377)
-
-    Examples
-    --------
-    Construct a PToTR model and confirm its family/link.
-
-    >>> import numpy as np
-    >>> import pyttb as ttb
-    >>> from gtotr import ptotr_cp, gtotr_cp
-    >>> rng = np.random.default_rng(0)
-    >>> X = ttb.tensor(rng.random((3, 5)))
-    >>> Y = ttb.tensor(rng.integers(0, 5, size=(4, 5)).astype(float))
-    >>> model = ptotr_cp(responses=Y, covariates=X)
-    >>> model.family.family_name
-    'poisson'
-    >>> model.family.link.link_name
-    'identity'
-
-    Fit the model. Poisson + Identity uses the specialized
-    ``cp_ao_poisson_identity`` method by default; non-negative covariates (as above)
-    satisfy its precondition.
-
-    >>> results = model.fit(rank=2, maxiters=20, printitn=0)
-    >>> results.method
-    'cp_ao_poisson_identity'
     """
     if "family" in model_options or "link" in model_options:
         raise TypeError(
             "ptotr_cp presets family='poisson' and link='identity'; "
             "do not pass 'family'/'link'."
         )
-    return gtotr_cp(
+    return PToTR_CP(
         responses=responses,
         covariates=covariates,
-        family="poisson",
-        link="identity",
         **model_options,
     )

@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import pyttb as ttb
+
 from gtotr.fitmethods.base import FitMethodBase
 from gtotr.solvers.cp_ao_backends.poisson_identity import cp_ao_poisson_identity_solve
 
@@ -16,8 +18,8 @@ class CPAOPoissonIdentity(FitMethodBase):
 
     This method applies to models with the Poisson family and Identity link
     (``supports()`` gates on ``family_name == "poisson"`` and
-    ``link.link_name == "identity"``). It is the **default** fit method for such models
-    (the generic ``cp_ao_glm`` remains reachable via ``method="cp_ao_glm"``).
+    ``link.link_name == "identity"``). It supports dense ``pyttb.tensor`` and sparse
+    ``pyttb.sptensor`` responses and covariates.
 
     The multiplicative updates come with a convergence guarantee that assumes a
     non-negative initial ``B`` and non-negative covariates ``X``. The underlying solver
@@ -31,6 +33,7 @@ class CPAOPoissonIdentity(FitMethodBase):
         The underlying self-contained solver.
     gtotr.models.gtotr_cp.ptotr_cp : Convenience constructor for Poisson + Identity
         models.
+    gtotr.models.gtotr_cp.PToTR_CP : Sparse-aware Poisson/Identity model class.
 
     References
     ----------
@@ -49,7 +52,12 @@ class CPAOPoissonIdentity(FitMethodBase):
     def supports(cls, model) -> bool:
         """Check if the model is compatible with this fit method."""
         fam = model.family
-        return (fam.family_name == "poisson") and (fam.link.link_name == "identity")
+        return (
+            (fam.family_name == "poisson")
+            and (fam.link.link_name == "identity")
+            and isinstance(model.responses, (ttb.sptensor, ttb.tensor))
+            and isinstance(model.covariates, (ttb.sptensor, ttb.tensor))
+        )
 
     def fit(self, model, **fit_options):
         """Fit using the self-contained Poisson-Identity multiplicative solver."""
