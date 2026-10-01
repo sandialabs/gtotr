@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import pyttb as ttb
+
 from gtotr.fitmethods.base import FitMethodBase
 from gtotr.models.gtotr_cp import GToTR_CP
 from gtotr.solvers.cp_ao_backends.glm import CPAOGLMBackend
@@ -17,8 +19,15 @@ class CPAOGLM(FitMethodBase):
 
     @classmethod
     def supports(cls, model) -> bool:
-        """Check if the model is compatible with this fit method."""
-        return isinstance(model, GToTR_CP)
+        """Check if the model is compatible with this fit method.
+
+        The generic GLM backend is currently dense-only.
+        """
+        return (
+            isinstance(model, GToTR_CP)
+            and isinstance(model.responses, ttb.tensor)
+            and isinstance(model.covariates, ttb.tensor)
+        )
 
     def fit(self, model, **fit_options):
         """Fit the model using CP alternating optimization with GLM updates."""
