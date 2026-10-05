@@ -1,84 +1,161 @@
-# Generalized Tensor-on-Tensor Regression(GToTR) Contributor Guide
+# Contributing
 
-## Issues
-If you are looking to get started or want to propose a change please start by checking
-current or filing a new [issue](https://github.com/sandialabs/gtotr/issues).
+Thank you for contributing to `gtotr`.
 
-## Working on GToTR locally
-1. Clone the project and enter the directory
-   ```
-   git clone https://github.com/sandialabs/gtotr.git
-   # OR git clone git@github.com:sandialabs/gtotr.git
-   ```
+This document describes common development workflows for the package, including how to
+build and serve the documentation locally.
 
-1. Setup your desired python environment as appropriate
+## Development environment
 
-1. Install GToTR and dependencies
+From the repository root, create and activate a Python environment, then install the
+package in editable mode with development dependencies:
 
-   Most changes only require dev options:
-   ```commandline
-   cd gtotr
-   python -m pip install -e ".[dev]"
-   ```
+```bash
+pip install -e ".[dev]"
+```
 
-   If you are adding tutorials or making changes to the docs, you will also need the
-   doc dependencies:
-   ```commandline
-   cd gtotr
-   python -m pip install -e ".[dev,doc]"
-   ```
+To include documentation dependencies as well, install the `doc` optional dependency
+group:
 
-1. Checkout a branch and make your changes
-    ```
-    git checkout -b my-new-feature-branch
-    ```
+```bash
+pip install -e ".[dev,doc]"
+```
 
-1. Formatters and linting (These are checked in the full test suite as well)
-   1. Run autoformatters and linting from root of project (they will change your code)
-      ```commandline
-      ruff check . --fix
-      ruff format
-      ```
-      1. Ruff's `--fix` won't necessarily address everything and may point out issues that need manual attention
-      1. [We](./.pre-commit-config.yaml) optionally support [pre-commit hooks](https://pre-commit.com/) for this
-         1. Alternatively, you can run `pre-commit run --all-files` from the command line if you don't want to install the hooks.
-   1. Check typing
-      ```commandline
-      mypy gtotr/
-      ```
-      1. Not included in our pre-commit hooks because of slow runtime.
-   1. Check spelling
-      ```commandline
-      codespell
-      ```
-      1. This is also included in the optional pre-commit hooks.
+The documentation stack uses MkDocs, Material for MkDocs, and mkdocstrings.
 
-1. Run tests (at desired fidelity)
-   1. Tests and doctests
-        ```commandline
-        pytest .
-        ```
-   1. Just tests
-        ```commandline
-        pytest tests
-        ```
-   1. With coverage
-        ```commandline
-        pytest . --cov=gtotr --cov-report=term-missing
-        ```
+## Running tests
 
-### Adding tutorials
+Run the test suite from the repository root:
 
-1. Follow general setup from above
-   1. Checkout a branch to make your changes
-   1. Install from source
+```bash
+pytest
+```
 
-1. Create a new Jupyter notebook in [./tutorials](./tutorials)
-   1. Our current convention is to prefix the filename with `gtotr-##-` and use lower case and hyphens
+To run tests with coverage:
 
-1. Rebuild the docs, review locally, and iterate on changes until ready for review
+```bash
+pytest --cov=gtotr
+```
 
-1. Strip all output and metadata from the notebook by running the following from the top level directory:
-   ```
-   nbstripout --extra-keys "metadata.language_info metadata.vscode metadata.kernelspec" tutorials/*.ipynb
-   ``` 
+## Building and serving the documentation
+
+The documentation source files live in the `docs/` directory and are configured by
+`mkdocs.yml`.
+
+### Install documentation dependencies
+
+If you have not already installed the documentation dependencies, run:
+
+```bash
+pip install -e ".[doc]"
+```
+
+or, for a development environment with both test/lint and documentation tools:
+
+```bash
+pip install -e ".[dev,doc]"
+```
+
+The quotes are recommended because some shells, such as `zsh`, interpret square
+brackets specially.
+
+### Serve the documentation locally
+
+To build the documentation and serve it locally with live reload:
+
+```bash
+mkdocs serve
+```
+
+MkDocs will print a local URL, typically:
+
+```text
+http://127.0.0.1:8000/
+```
+
+Open that URL in a browser to view the HTML documentation. While `mkdocs serve` is
+running, edits to files in `docs/`, docstrings, or `mkdocs.yml` should automatically
+trigger a rebuild.
+
+### Build static HTML documentation
+
+To build the static HTML documentation without starting a web server:
+
+```bash
+mkdocs build
+```
+
+The generated HTML files are written to:
+
+```text
+site/
+```
+
+The main page is:
+
+```text
+site/index.html
+```
+
+For a stricter documentation build that treats warnings as errors, use:
+
+```bash
+mkdocs build --strict
+```
+
+This is useful before submitting changes that affect docs or public API docstrings.
+
+### Clean and rebuild
+
+To remove the generated documentation and rebuild from scratch:
+
+```bash
+rm -rf site
+mkdocs build --strict
+```
+
+On Windows PowerShell:
+
+```powershell
+Remove-Item -Recurse -Force site
+mkdocs build --strict
+```
+
+## Documentation style notes
+
+- Put user-facing narrative documentation in `docs/*.md`.
+- Keep API reference entries in `docs/api.md`.
+- Public classes, methods, and functions should have NumPy-style docstrings.
+- If a new page is added under `docs/`, also add it to the `nav:` section in
+  `mkdocs.yml`.
+- Prefer small, executable examples that use public APIs such as `gtotr_cp` and
+  `ptotr_cp`.
+- When documenting sparse PToTR examples, note that sparse input support is currently
+  scoped to `PToTR_CP` and sparse-aware fit methods such as
+  `cp_ao_poisson_identity`.
+
+## Linting and formatting
+
+If linting tools are installed through the `dev` dependency group, run:
+
+```bash
+ruff check .
+```
+
+To apply automatic fixes where possible:
+
+```bash
+ruff check . --fix
+```
+
+## Pull request checklist
+
+Before submitting a pull request, consider running:
+
+```bash
+pytest
+ruff check .
+mkdocs build --strict
+```
+
+Also confirm that any new public API has corresponding documentation and tests.

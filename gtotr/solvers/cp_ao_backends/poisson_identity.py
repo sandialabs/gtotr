@@ -20,8 +20,23 @@ import numpy as np
 import pyttb as ttb
 from numpy_groupies import aggregate as accumarray
 
+from gtotr.utils.likelihood import poisson_deviance_tensor, poisson_loglike_tensor
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+
+def _as_array(obj: Any) -> np.ndarray:
+    """Convert pyttb dense/sparse/scalar intermediates to a dense ndarray."""
+    if isinstance(obj, np.ndarray):
+        return obj
+    if isinstance(obj, ttb.sptensor):
+        return obj.to_tensor().data
+    if isinstance(obj, ttb.tensor):
+        return obj.data
+    if hasattr(obj, "double"):
+        return obj.double()
+    return np.asarray(obj)
 
 
 def _calculate_pi(
@@ -101,13 +116,13 @@ def _calculate_phi(
         Phi = -np.ones((Data.shape[factorIndex], rank))
         xsubs = Data.subs[:, factorIndex]
         v = np.sum(Model.factor_matrices[factorIndex][xsubs, :] * Pi, axis=1)
-        num = Data.vals
-        den = np.maximum(v, epsilon)[:, None]
+        num = np.asarray(Data.vals, dtype=float).reshape(-1)
+        den = np.maximum(v, epsilon)
         wvals = num / den
         for r in range(rank):
             Yr = accumarray(
                 xsubs,
-                np.squeeze(wvals * Pi[:, r][:, None]),
+                wvals * Pi[:, r],
                 size=Data.shape[factorIndex],
             )
             Phi[:, r] = Yr
@@ -115,6 +130,7 @@ def _calculate_phi(
         Xn = Data.to_tenmat(np.array([factorIndex], order=Data.order), copy=False).data
         V = Model.factor_matrices[factorIndex].dot(Pi.transpose())
         num = Xn
+
         den = np.maximum(V, epsilon)
         W = num / den
         Phi = W.dot(Pi)
@@ -195,6 +211,34 @@ def _check_nonneg_covariates(X: ttb.sptensor | ttb.tensor) -> None:
         )
 
 
+def _eval_poisson_identity_ll_dev(
+    model: Any,
+    coef: ttb.ktensor,
+    Y: ttb.sptensor | ttb.tensor,
+    X: ttb.sptensor | ttb.tensor,
+) -> tuple[float, float]:
+    """Evaluate Poisson/Identity log-likelihood and deviance.
+
+    Prefer model-level implementations when available so that solver convergence,
+    ``model.loglike(...)``, and results summaries use the same objective.
+    """
+    params = {"coef": coef}
+
+    if hasattr(model, "deviance"):
+        return (
+            float(model.loglike(params, responses=Y, covariates=X)),
+            float(model.deviance(params, responses=Y, covariates=X)),
+        )
+
+    # Backward-compatible fallback for dense GToTR_CP Poisson/Identity models.
+    mu = model.predict(params, covariates=X, which="mean")
+    eps = getattr(model.family, "eps", 1e-12)
+    return (
+        poisson_loglike_tensor(Y, mu, eps=eps),
+        poisson_deviance_tensor(Y, mu, eps=eps),
+    )
+
+
 def cp_ao_poisson_identity_solve(
     model: Any,
     *,
@@ -212,13 +256,15 @@ def cp_ao_poisson_identity_solve(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Fit Poisson + Identity CP regression via multiplicative alternating updates.
 
-    Handles both dense (``pyttb.tensor``) and sparse (``pyttb.sptensor``) responses.
+    Handles both dense (``pyttb.tensor``) and sparse (``pyttb.sptensor``) responses
+    and covariates.
 
     Parameters
     ----------
-    model : GToTR_CP
+    model : PToTR_CP or compatible Poisson/Identity model
         The model providing ``responses``, ``covariates``, ``family``, ``contract_xb``,
-        and ``_init_params``.
+        and ``_init_params``. If the model provides sparse-aware ``loglike`` and
+        ``deviance`` methods, those are used for convergence evaluation.
     rank : int
         Rank of the CP factorization.
     init : {"random"} or pyttb.ktensor, default="random"
@@ -239,20 +285,19 @@ def cp_ao_poisson_identity_solve(
         If True, record per-iteration log-likelihood, deviance, and convergence trace.
     check_inputs : bool, default=True
         If True, validate that a user-supplied ``init`` and the covariates ``X`` are
-        non-negative before iterating. Set False to skip these checks (e.g. for large or
-        sparse inputs), which voids the non-negativity guarantee.
+        non-negative before iterating. Set False to skip these checks, which voids the
+        non-negativity guarantee.
     seed : int, default=0
         Random number generator seed used when ``init="random"``.
     **_ignored : Any
-        Extra keyword arguments (e.g. ``normtype``, ``printinneritn``) are ignored so
-        mixed-convention callers do not crash.
+        Extra keyword arguments are ignored so mixed-convention callers do not crash.
 
     Returns
     -------
     tuple[dict, dict]
         ``(params, fit_info)`` where ``params = {"coef": ktensor}`` and ``fit_info``
-        has keys ``method, converged, niter, llf, deviance, rank`` (plus ``trace_llf``,
-        ``trace_deviance``, ``trace_convergence`` when ``trace=True``).
+        has keys ``method, converged, niter, llf, deviance, rank`` plus trace keys
+        when ``trace=True``.
 
     See Also
     --------
@@ -260,6 +305,7 @@ def cp_ao_poisson_identity_solve(
         dispatches to this solver.
     gtotr.models.gtotr_cp.ptotr_cp : Convenience constructor for Poisson + Identity
         models.
+    gtotr.models.gtotr_cp.PToTR_CP : Sparse-aware Poisson/Identity model class.
 
     References
     ----------
@@ -280,7 +326,7 @@ def cp_ao_poisson_identity_solve(
         _check_nonneg_covariates(X)
 
     if q == 1:
-        Xden = np.outer(X.collapse(1).data, np.ones(rank))
+        Xden = np.outer(_as_array(X.collapse(1)).reshape(-1), np.ones(rank))
 
     # initial values
     if isinstance(init, str):
@@ -294,15 +340,7 @@ def cp_ao_poisson_identity_solve(
 
     B.normalize(normtype=1)
 
-    def full_loglike(coef: ttb.ktensor) -> tuple[float, float]:
-        # identity link => mu = <X|B>
-        mu = model.contract_xb(coef).to_tensor().data
-        return (
-            float(model.family.loglike(Y.data, mu)),
-            float(model.family.deviance(Y.data, mu)),
-        )
-
-    ll_prev, dev_prev = full_loglike(B)
+    ll_prev, dev_prev = _eval_poisson_identity_ll_dev(model, B, Y, X)
     trace_ll: list[float] = []
     trace_dev: list[float] = []
     trace_delta: list[float] = []
@@ -321,14 +359,14 @@ def cp_ao_poisson_identity_solve(
                 Xden = Wn.sum(1)
             for _kk in range(maxinneriters):
                 if q == 1:  # W is a MTTKRP, most operations already formed in Wn
-                    W = X.ttm(Vt.T, 0).data.T
+                    W = _as_array(X.ttm(Vt.T, 0)).T
                 else:
                     W = np.einsum("abc,ac->bc", Wn, Vt)
                 UW = ttb.ktensor([*B.factor_matrices[q : q + p], W])
                 Pit = _calculate_pi(Y, UW, rank, p, p + 1)
                 Phit = _calculate_phi(Y, UW, rank, p, Pit, epsDivZero)
                 if q == 1:
-                    num = X.ttm(Phit.T, 1).data
+                    num = _as_array(X.ttm(Phit.T, 1))
                 else:
                     num = np.einsum("abc,bc->ac", Wn, Phit)
                 Vt *= num / np.maximum(Xden, epsDivZero)
@@ -336,7 +374,7 @@ def cp_ao_poisson_identity_solve(
             B.normalize(normtype=1, mode=ii)
 
         if q == 1:  # W is a MTTKRP, most operations already formed in Wn
-            W = X.ttm(B.factor_matrices[q - 1].T, 0).data.T
+            W = _as_array(X.ttm(B.factor_matrices[q - 1].T, 0)).T
         else:
             W = np.einsum("abc,ac->bc", Wn, B.factor_matrices[q - 1])
         Wsum = W.sum(0)
@@ -354,8 +392,8 @@ def cp_ao_poisson_identity_solve(
                 B.factor_matrices[ii + q] = Ut
             B.normalize(normtype=1, mode=ii + q)
 
-        # Convergence, using gtotr's full Poisson loglike (single source of truth)
-        ll, dev = full_loglike(B)
+        # Convergence evaluation is delegated to the model or likelihood utilities.
+        ll, dev = _eval_poisson_identity_ll_dev(model, B, Y, X)
         convcrit = abs((ll - ll_prev) / (abs(ll) + 1e-12))
         if trace:
             trace_ll.append(ll)
