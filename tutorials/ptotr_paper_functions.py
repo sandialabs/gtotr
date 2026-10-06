@@ -16,6 +16,8 @@ from scipy import sparse
 from scipy.stats import poisson
 from tqdm import tqdm
 
+from gtotr import ptotr_cp
+
 ##########################################################################
 # 02 - PET image reconstruction
 ##########################################################################
@@ -888,9 +890,182 @@ def fit_ml_em_sparse(
     return rmse_df, saved_imgs, final_B_by_pp
 
 
-def ml_em(Y, X, stoptol=1e-10, maxiters=100, epsDivZero=1e-10, B=None,verb = False):
+def fit_ptotr_sparse(
+    Y,
+    X_tensor,
+    B0,
+    rank,
+    pp_values=(1, 2, 4, 8, 16),
+    p1=2622,
+    itint=5,
+    itmax=120,
+    epsDivZero=1e-10,
+    stoptol=-1,
+    out_rmse_csv="data/ptotr_rmses.csv",
+    out_slices_pkl="data/ptotr_slices.pkl",
+    save_iterations=(10, 120),
+    image_shape=(256, 256),
+    num_channels=4,
+    num_slices=240,
+):
     """
-    Poisson vector-on-vector regression with identity link.
+    Perform sparse-X PToTR fits for multiple data percentages.
+
+    Each pp fit starts independently from an all-ones initial B.
+
+    Parameters
+    ----------
+    Y : pyttb.tensor
+        Dense response tensor.
+
+    X_tensor : pyttb.sptensor
+        Sparse tensor with shape approximately:
+
+            (256, 256, K)
+
+        or more generally:
+
+            (I, J, K)
+
+    B0 : pyttb.tensor, shape (num_channels, num_slices, I, J)
+        Reference coefficient tensor for RMSE.
+
+    pp_values : tuple
+        Values such as (1, 2, 4, 8, 16).
+
+    p1 : int
+        Number of third-mode samples corresponding to one percent.
+
+    itint : int
+        RMSE checkpoint interval.
+
+    itmax : int
+        Total iterations per pp value.
+
+    epsDivZero : float
+        Small positive constant for numerical protection.
+
+    stoptol : float
+        Stopping tolerance. Use -1 to force all iterations.
+
+    out_rmse_csv : str
+        Output path for RMSE CSV.
+
+    out_slices_pkl : str
+        Output path for saved image slices.
+
+    save_iterations : tuple
+        Iterations at which image slices are saved.
+
+    Returns
+    -------
+    rmse_df : pandas.DataFrame
+        RMSE values.
+
+    saved_imgs : dict
+        Saved image slices.
+
+    final_B_by_pp : dict
+        Final B estimates by pp value.
+    """
+    I, J, K_total = X_tensor.shape
+
+    if image_shape != (I, J):
+        raise ValueError(
+            f"image_shape={image_shape} does not match "
+            f"X_tensor.shape[:2]={X_tensor.shape[:2]}."
+        )
+
+    if B0.shape != (I, J, num_slices, num_channels):
+        raise ValueError(f"B0 must have shape {(I, J, num_slices, num_channels)}. Got {B0.shape}.")
+
+    remses = []
+    saved_imgs = {}
+    final_B_by_pp = {}
+
+    # Prepare outputs
+    percent_labels = [f"{pp}%" for pp in pp_values]
+    iteration_labels = list(range(itint, itmax + 1, itint))
+    remses = []       # list[ list[rmse] ] aligned to percent_labels x iteration_labels
+    saved_imgs = {}   # optional
+    final_B_by_pp = {}
+
+    fit_tol = stoptol if (isinstance(stoptol, (int, float)) and stoptol > 0) else 1e-5
+
+    for pp in pp_values:
+        k = int(p1 * pp)
+        if k > K_total:
+            raise ValueError(
+                f"For pp={pp}, k=p1*pp={k} exceeds X_tensor third dimension {K_total}."
+            )
+
+        print(f"ptotr_sparse, {pp}% data; iteration: 0", end=" ")
+
+        Ypp = Y[:, :, :k]
+        Xpp = X_tensor[:, :, :k]
+
+        # Build Poisson/Identity model (sparse-aware per gtotr_cp.py)
+        model = ptotr_cp(responses=Ypp, covariates=Xpp)
+
+        # Initialize coeeficient tensor to all ones (when reconstructed using full())
+        Bhat = (1/rank)*ttb.ktensor([np.ones((s,rank)) for s in B0.shape])
+
+        # Iteration checkpoints by warm-starting in blocks of itint
+        remse_pp = []
+        for iter_end in iteration_labels:
+            print(f"Starting iteration: {iter_end}")
+            results = model.fit(
+                init=Bhat,
+                rank=rank,
+                maxiters=itint,    # advance in blocks
+                tolerance=fit_tol,
+                epsDivZero=epsDivZero
+            )
+            Bhat = results.coef_
+
+            rmse = np.sqrt(np.mean((B0-Bhat).data.reshape(-1,1)**2))
+            remse_pp.append(rmse)
+            print(iter_end, end=" ", flush=True)
+
+            # Optional: add slice saving here if desired (same iterations as ml_em)
+            # if iter_end in save_iterations:
+            #     save_slices_from_C(
+            #         C=B_hat_2d,
+            #         saved_imgs=saved_imgs,
+            #         pp=pp,
+            #         iteration=iter_end,
+            #         image_shape=image_shape,
+            #         num_channels=num_channels,
+            #         num_slices=num_slices,
+            #         channel=0,
+            #         axial_slice=119,
+            #         coronal_index=127,
+            #         sagittal_index=127,
+            #     )
+
+        print("")  # newline after progress printout
+
+        remses.append(remse_pp)
+        final_B_by_pp[pp] = Bhat  # final normalized CP coef
+
+    # Assemble RMSE DataFrame to match ml_em layout
+    rmse_df = pd.DataFrame(remses, index=percent_labels, columns=iteration_labels)
+    rmse_df.to_csv(out_rmse_csv)
+    print(f"Saved RMSEs to {out_rmse_csv}")
+
+    # Persist saved image slices (if collected)
+    import pickle
+    with open(out_slices_pkl, "wb") as f:
+        pickle.dump(saved_imgs, f)
+    print(f"Saved image slices to {out_slices_pkl}")
+
+    return rmse_df, saved_imgs, final_B_by_pp
+
+
+
+def ml_em_dense(Y, X, stoptol=1e-10, maxiters=100, epsDivZero=1e-10, B=None,verb = False):
+    """
+    Poisson vector-on-vector regression with identity link. Dense covariates.
 
     Fits the model
         Y ~ Poisson(B @ X)
@@ -992,7 +1167,7 @@ def ml_em(Y, X, stoptol=1e-10, maxiters=100, epsDivZero=1e-10, B=None,verb = Fal
     params = (stoptol, maxiters, epsDivZero)
     return B, lliklast, lliks, params
 
-def fit_ml_em(Y,X,B0):
+def fit_ml_em_dense(Y,X,B0):
     p1 = 2622
     itint = 5
     itmax = 120
@@ -1009,7 +1184,7 @@ def fit_ml_em(Y,X,B0):
         for itt in range(int(np.floor(itmax / itint))):
 
             # fit the next block of iterations
-            B, lliklast, lliks, params = ml_em(
+            B, lliklast, lliks, params = ml_em_dense(
                 Y = Y[:, :, :(p1 * pp)].reshape(4*240,-1),
                 X = X[:, :, :(p1 * pp)].reshape(256*256,-1),
                 maxiters = itint,
