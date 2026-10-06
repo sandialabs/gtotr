@@ -942,6 +942,9 @@ def fit_ptotr_sparse(
     itmax : int
         Total iterations per pp value.
 
+    rank: int
+        Rank of the coefficient tensor to fit.
+
     epsDivZero : float
         Small positive constant for numerical protection.
 
@@ -979,6 +982,11 @@ def fit_ptotr_sparse(
     if B0.shape != (I, J, num_slices, num_channels):
         raise ValueError(f"B0 must have shape {(I, J, num_slices, num_channels)}. Got {B0.shape}.")
 
+    channel        = 0    # saves slices from the first channel (same as ml_em)
+    axial_slice    = 119
+    coronal_index  = 127
+    sagittal_index = 127
+
     remses = []
     saved_imgs = {}
     final_B_by_pp = {}
@@ -1013,7 +1021,6 @@ def fit_ptotr_sparse(
         # Iteration checkpoints by warm-starting in blocks of itint
         remse_pp = []
         for iter_end in iteration_labels:
-            print(f"Starting iteration: {iter_end}")
             results = model.fit(
                 init=Bhat,
                 rank=rank,
@@ -1027,21 +1034,14 @@ def fit_ptotr_sparse(
             remse_pp.append(rmse)
             print(iter_end, end=" ", flush=True)
 
-            # Optional: add slice saving here if desired (same iterations as ml_em)
-            # if iter_end in save_iterations:
-            #     save_slices_from_C(
-            #         C=B_hat_2d,
-            #         saved_imgs=saved_imgs,
-            #         pp=pp,
-            #         iteration=iter_end,
-            #         image_shape=image_shape,
-            #         num_channels=num_channels,
-            #         num_slices=num_slices,
-            #         channel=0,
-            #         axial_slice=119,
-            #         coronal_index=127,
-            #         sagittal_index=127,
-            #     )
+            Bhat_arr = Bhat.to_tensor().data
+            
+            # ---- saved_imgs at snapshot ----
+            if iter_end in save_iterations:
+                saved_imgs[(pp, iter_end, "axial")]    = Bhat_arr[:, :, axial_slice, channel]        # (I, J)
+                saved_imgs[(pp, iter_end, "coronal")]  = Bhat_arr[:, coronal_index, :, channel].T    # (S, I)
+                saved_imgs[(pp, iter_end, "sagittal")] = Bhat_arr[sagittal_index, :, :, channel].T   # (S, J)
+                saved_imgs[(pp, iter_end, "loglike")]  = results.llf
 
         print("")  # newline after progress printout
 
