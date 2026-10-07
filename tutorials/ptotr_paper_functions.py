@@ -405,6 +405,7 @@ def fit_ptotr_init(
     rank: int,
     nit: int = 100,
     fit_tol: float = 1e-8,
+    seed=0
 ) -> dict:
     """Fit one randomly initialized PToTR CP model."""
 
@@ -418,6 +419,7 @@ def fit_ptotr_init(
         maxiters=nit,
         tolerance=fit_tol,
         epsDivZero=1e-10,
+        seed=seed
     )
 
     return {
@@ -454,8 +456,9 @@ def fit_ptotr_rank(
             rank=rank,
             nit=nit,
             fit_tol=fit_tol,
+            seed=seed
         )
-        for _ in range(ninit)
+        for seed in range(ninit)
     )
 
     best_fit = None
@@ -1126,6 +1129,87 @@ def rmse_from_C(C, B0, block_rows=2048):
 
     return float(np.sqrt(ssq / B0.size))
 
+# def save_slices_from_C(
+#     C,
+#     saved_imgs,
+#     pp,
+#     iteration,
+#     image_shape=(256, 256),
+#     num_channels=4,
+#     num_slices=240,
+#     channel=0,
+#     axial_slice=119,
+#     coronal_index=127,
+#     sagittal_index=127,
+# ):
+#     """
+#     Save image slices from C = B.T without explicitly forming
+
+#         B.reshape(4, 240, 256, 256)
+
+#     This assumes:
+
+#         B.shape == (num_channels * num_slices, I * J)
+
+#     and that the image-plane coefficient index is pyttb/Fortran-order:
+
+#         row = i + I * j
+
+#     Therefore a coefficient vector of length I * J is reshaped with
+#     order='F'.
+
+#     Saved slices match the intended semantics of:
+
+#         B4 = B.reshape(num_channels, num_slices, I, J)
+
+#         axial   = B4[channel, axial_slice, :, :]
+#         coronal = B4[channel, :, coronal_index, :]
+#         sagittal= B4[channel, :, :, sagittal_index]
+#     """
+#     I, J = image_shape
+#     h, m = C.shape
+
+#     expected_h = I * J
+#     expected_m = num_channels * num_slices
+
+#     if h != expected_h:
+#         raise ValueError(f"C has h={h}, expected {expected_h}.")
+
+#     if m != expected_m:
+#         raise ValueError(f"C has m={m}, expected {expected_m}.")
+
+#     q0 = channel * num_slices
+
+#     # Axial:
+#     #
+#     #     B4[channel, axial_slice, :, :]
+#     #
+#     q_axial = q0 + axial_slice
+#     axial = C[:, q_axial].reshape(I, J, order="F").copy()
+
+#     # Coronal:
+#     #
+#     #     B4[channel, :, coronal_index, :]
+#     #
+#     # Fixed first image coordinate i = coronal_index, all j.
+#     z_indices = q0 + np.arange(num_slices)
+#     j_indices = np.arange(J)
+#     coronal_rows = coronal_index + I * j_indices
+#     coronal = C[coronal_rows[:, None], z_indices[None, :]].T.copy()
+
+#     # Sagittal:
+#     #
+#     #     B4[channel, :, :, sagittal_index]
+#     #
+#     # Fixed second image coordinate j = sagittal_index, all i.
+#     i_indices = np.arange(I)
+#     sagittal_rows = i_indices + I * sagittal_index
+#     sagittal = C[sagittal_rows[:, None], z_indices[None, :]].T.copy()
+
+#     saved_imgs[(pp, iteration, "axial")] = axial
+#     saved_imgs[(pp, iteration, "coronal")] = coronal
+#     saved_imgs[(pp, iteration, "sagittal")] = sagittal
+
 def save_slices_from_C(
     C,
     saved_imgs,
@@ -1135,34 +1219,16 @@ def save_slices_from_C(
     num_channels=4,
     num_slices=240,
     channel=0,
-    axial_slice=119,
+    sagittal_index=119,
     coronal_index=127,
-    sagittal_index=127,
+    axial_index=127,
 ):
     """
-    Save image slices from C = B.T without explicitly forming
-
-        B.reshape(4, 240, 256, 256)
-
-    This assumes:
-
-        B.shape == (num_channels * num_slices, I * J)
-
-    and that the image-plane coefficient index is pyttb/Fortran-order:
-
-        row = i + I * j
-
-    Therefore a coefficient vector of length I * J is reshaped with
-    order='F'.
-
-    Saved slices match the intended semantics of:
-
-        B4 = B.reshape(num_channels, num_slices, I, J)
-
-        axial   = B4[channel, axial_slice, :, :]
-        coronal = B4[channel, :, coronal_index, :]
-        sagittal= B4[channel, :, :, sagittal_index]
+    Save images for different views.
+    
     """
+    import numpy as np
+
     I, J = image_shape
     h, m = C.shape
 
@@ -1171,40 +1237,28 @@ def save_slices_from_C(
 
     if h != expected_h:
         raise ValueError(f"C has h={h}, expected {expected_h}.")
-
     if m != expected_m:
         raise ValueError(f"C has m={m}, expected {expected_m}.")
 
     q0 = channel * num_slices
+    z_indices = q0 + np.arange(num_slices)   # slices
 
-    # Axial:
-    #
-    #     B4[channel, axial_slice, :, :]
-    #
-    q_axial = q0 + axial_slice
-    axial = C[:, q_axial].reshape(I, J, order="F").copy()
+    # axial
+    i_indices = np.arange(I)
+    axial_rows = i_indices + I * axial_index
+    axial = C[axial_rows[:, None], z_indices[None, :]].T.copy()
 
-    # Coronal:
-    #
-    #     B4[channel, :, coronal_index, :]
-    #
-    # Fixed first image coordinate i = coronal_index, all j.
-    z_indices = q0 + np.arange(num_slices)
-    j_indices = np.arange(J)
+    # coronal
+    j_indices = np.arange(J)                 # image-plane columns = second index
     coronal_rows = coronal_index + I * j_indices
     coronal = C[coronal_rows[:, None], z_indices[None, :]].T.copy()
 
-    # Sagittal:
-    #
-    #     B4[channel, :, :, sagittal_index]
-    #
-    # Fixed second image coordinate j = sagittal_index, all i.
-    i_indices = np.arange(I)
-    sagittal_rows = i_indices + I * sagittal_index
-    sagittal = C[sagittal_rows[:, None], z_indices[None, :]].T.copy()
+    # sagittal
+    q_sagittal = q0 + sagittal_index
+    sagittal = C[:, q_sagittal].reshape(I, J, order="F").copy()
 
-    saved_imgs[(pp, iteration, "axial")] = axial
-    saved_imgs[(pp, iteration, "coronal")] = coronal
+    saved_imgs[(pp, iteration, "axial")]    = axial
+    saved_imgs[(pp, iteration, "coronal")]  = coronal
     saved_imgs[(pp, iteration, "sagittal")] = sagittal
 
 def fit_ml_em_sparse(
@@ -1354,9 +1408,9 @@ def fit_ml_em_sparse(
                     num_channels=num_channels,
                     num_slices=num_slices,
                     channel=0,
-                    axial_slice=119,
+                    sagittal_index=119,
                     coronal_index=127,
-                    sagittal_index=127,
+                    axial_index=127,
                 )
 
         B, lliklast, lliks, params = ml_em_sparseX(
@@ -1538,9 +1592,9 @@ def fit_ptotr_sparse(
             
             # ---- saved_imgs at snapshot ----
             if iter_end in save_iterations:
-                saved_imgs[(pp, iter_end, "axial")]    = Bhat_arr[:, :, axial_slice, channel]        # (I, J)
-                saved_imgs[(pp, iter_end, "coronal")]  = Bhat_arr[:, coronal_index, :, channel].T    # (S, I)
-                saved_imgs[(pp, iter_end, "sagittal")] = Bhat_arr[sagittal_index, :, :, channel].T   # (S, J)
+                saved_imgs[(pp, iter_end, "axial")]    = Bhat_arr[:, :, axial_slice, channel]
+                saved_imgs[(pp, iter_end, "coronal")]  = Bhat_arr[:, coronal_index, :, channel]
+                saved_imgs[(pp, iter_end, "sagittal")] = Bhat_arr[sagittal_index, :, :, channel]
                 saved_imgs[(pp, iter_end, "loglike")]  = results.llf
 
         print("")  # newline after progress printout
