@@ -581,7 +581,7 @@ def ptotr_pet_download_data():
     ]
 
     for url in ptotr_pet_data_urls:
-        local_filename = "data/" + url.split('/')[-1]
+        local_filename = "../data/" + url.split('/')[-1]
         if not os.path.exists(local_filename):
             urllib.request.urlretrieve(url, local_filename)
             print(f"Downloading: {local_filename}")
@@ -590,7 +590,7 @@ def ptotr_pet_download_data():
 
 def ptotr_pet_compute_B_true(savedata=None):
 
-    FILENAME = f"data/ptotr_pet_{savedata}.npy"
+    FILENAME = f"../data/ptotr_pet_{savedata}.npy"
 
     if savedata:
         if os.path.exists(FILENAME):
@@ -599,10 +599,10 @@ def ptotr_pet_compute_B_true(savedata=None):
             return B_true
 
     print("Loading image data")
-    Y1 = nib.load("data/sub-03_ses-Y1MRC_run-1_T1w.nii.gz").get_fdata()
-    Y2 = nib.load("data/sub-03_ses-Y1MRC_run-2_T1w.nii.gz").get_fdata()
-    Y3 = nib.load("data/sub-03_ses-Y1MRC_run-3_T1w.nii.gz").get_fdata()
-    Y4 = nib.load("data/sub-03_ses-Y1MRC_run-4_T1w.nii.gz").get_fdata()
+    Y1 = nib.load("../data/sub-03_ses-Y1MRC_run-1_T1w.nii.gz").get_fdata()
+    Y2 = nib.load("../data/sub-03_ses-Y1MRC_run-2_T1w.nii.gz").get_fdata()
+    Y3 = nib.load("../data/sub-03_ses-Y1MRC_run-3_T1w.nii.gz").get_fdata()
+    Y4 = nib.load("../data/sub-03_ses-Y1MRC_run-4_T1w.nii.gz").get_fdata()
 
     print("Creating B_true")
     B_true = np.stack((
@@ -615,7 +615,7 @@ def ptotr_pet_compute_B_true(savedata=None):
     B_true = 2*(B_true - B_true.min())/(B_true.max() - B_true.min())
 
     if savedata:
-        FILENAME = f"data/ptotr_pet_{savedata}.npy"
+        FILENAME = f"../data/ptotr_pet_{savedata}.npy"
         print(f"Saving B_true: {FILENAME}")
         np.save(FILENAME, B_true)
 
@@ -623,7 +623,7 @@ def ptotr_pet_compute_B_true(savedata=None):
 
 def ptotr_pet_compute_Ys(B, savedata=None):
 
-    FILEBASE = f"data/ptotr_pet_{savedata}"
+    FILEBASE = f"../data/ptotr_pet_{savedata}"
     FILENAME_YS = FILEBASE + '.npy'
     FILENAME_YS_IND = FILEBASE + '_ind.npy'
 
@@ -704,7 +704,7 @@ def _process_chunk(p0, p1, arr, filename, shape, sz, dtype):
 
 def ptotr_pet_compute_Xs(Y_ind, savedata=None):
 
-    FILENAME = f"data/ptotr_pet_{savedata}.tns"
+    FILENAME = f"../data/ptotr_pet_{savedata}.tns"
 
     if savedata:
         if os.path.exists(FILENAME):
@@ -721,7 +721,7 @@ def ptotr_pet_compute_Xs(Y_ind, savedata=None):
 
     num_pixels = sz * sz
 
-    memmap_filename = "data/ptotr_pet_Xs_memmap_float64.dat"
+    memmap_filename = "../data/ptotr_pet_Xs_memmap_float64.dat"
 
     # Disk-backed output array.
     # Shape is flattened over pixels: pixel index p = aa * sz + bb.
@@ -1186,8 +1186,8 @@ def fit_ml_em_sparse(
     itmax=120,
     epsDivZero=1e-10,
     stoptol=-1,
-    out_rmse_csv="data/ml_em_rmses.csv",
-    out_slices_pkl="data/ml_em_slices.pkl",
+    out_rmse_csv="../data/ml_em_rmses.csv",
+    out_slices_pkl="../data/ml_em_slices.pkl",
     save_iterations=(10, 120),
     image_shape=(256, 256),
     num_channels=4,
@@ -1370,8 +1370,8 @@ def fit_ptotr_sparse(
     itmax=120,
     epsDivZero=1e-10,
     stoptol=-1,
-    out_rmse_csv="data/ptotr_rmses.csv",
-    out_slices_pkl="data/ptotr_slices.pkl",
+    out_rmse_csv="../data/ptotr_rmses.csv",
+    out_slices_pkl="../data/ptotr_slices.pkl",
     save_iterations=(10, 120),
     image_shape=(256, 256),
     num_channels=4,
