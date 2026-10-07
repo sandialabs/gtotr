@@ -405,7 +405,7 @@ def fit_ptotr_init(
     rank: int,
     nit: int = 100,
     fit_tol: float = 1e-8,
-    seed=0
+    seed: int = 0,
 ) -> dict:
     """Fit one randomly initialized PToTR CP model."""
 
@@ -419,7 +419,7 @@ def fit_ptotr_init(
         maxiters=nit,
         tolerance=fit_tol,
         epsDivZero=1e-10,
-        seed=seed
+        seed=seed,
     )
 
     return {
@@ -436,6 +436,7 @@ def fit_ptotr_rank(
     nit: int = 100,
     fit_tol: float = 1e-8,
     n_jobs: int = 32,
+    seed: int = 0,
 ) -> dict:
     """Fit a PToTR CP model using multiple random initializations."""
 
@@ -444,7 +445,14 @@ def fit_ptotr_rank(
             "X and Y must have the same number of observations: "
             f"{X.shape[-1]} != {Y.shape[-1]}"
         )
-
+    rng = np.random.default_rng(seed)
+    
+    seeds = rng.integers(
+        0,
+        2**32 - 1,
+        size=ninit,
+    )
+    
     results = Parallel(
         n_jobs=n_jobs,
         backend="loky",
@@ -456,9 +464,9 @@ def fit_ptotr_rank(
             rank=rank,
             nit=nit,
             fit_tol=fit_tol,
-            seed=seed
+            seed=int(init_seed),
         )
-        for seed in range(ninit)
+        for init_seed in seeds
     )
 
     best_fit = None
@@ -484,7 +492,6 @@ def fit_ptotr_rank(
         "rank": rank,
     }
 
-
 def fit_ptotr_ranks(
     X,
     Y,
@@ -493,8 +500,20 @@ def fit_ptotr_ranks(
     nit=100,
     fit_tol=1e-8,
     n_jobs=32,
+    output_dir="results",
 ):
     """Fit PToTR CP models over a collection of ranks."""
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_file = output_dir / "ptotr_res.csv"
+
+    # Number of observations
+    n = Y.shape[-1]
+
+    # Dimensions of predictor and response modes
+    hs = X.shape[:-1]
+    ms = Y.shape[:-1]
 
     results = []
 
@@ -509,16 +528,43 @@ def fit_ptotr_ranks(
             n_jobs=n_jobs,
         )
 
+        # Same parameter-count formula as the RMarkdown
+        npar = rank * (
+            sum(h - 1 for h in hs)
+            + sum(m - 1 for m in ms)
+            + 1
+        ) 
+
+        bic = -2 * result["loglik"] + np.log(n) * npar
+
+        result["npar"] = npar
+        result["bic"] = bic
+
         results.append(result)
+
+        # Checkpoint after every rank
+        results_df = pd.DataFrame([
+            {
+                "rank": r["rank"],
+                "loglik": r["loglik"],
+                "bic": r["bic"],
+                "npar": r["npar"],
+                "init_best": r["init_best"],
+            }
+            for r in results
+        ])
+
+        results_df.to_csv(output_file, index=False)
 
         print(
             f"\nFinished rank={rank:2d} | "
-            f"best loglik={result['loglik']:.6e} | "
+            f"loglik={result['loglik']:.6e} | "
+            f"BIC={bic:.6e} | "
+            f"npar={npar} | "
             f"best init={result['init_best']}\n"
         )
 
     return results
-
 
     
 ##########################################################################
