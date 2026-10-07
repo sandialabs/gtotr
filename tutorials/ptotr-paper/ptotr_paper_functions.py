@@ -787,57 +787,6 @@ def ptotr_pet_compute_Xs(Y_ind, savedata=None):
 
     return Xs_sparse
 
-##########################################################################
-# 03 - Changepoint dectection
-##########################################################################
-
-def ptotr_changepoint_gen_covariates(tau, len=14):
-    pre_tau = np.tile(np.array([1,0]), (tau, 1)).T
-    post_tau = np.tile(np.array([0,1]), (len-tau, 1)).T
-    return ttb.tensor(np.hstack((pre_tau,post_tau)))
-
-def ptotr_changepoint_create_data(num_students=10, num_topics=15, num_days=14, count_mean=1,
-                change_topic=3, change_day=9, change_magnitude=20, random_seed=12345):
-
-    samples = []
-    np.random.seed(random_seed)
-    for i in range(num_days):
-
-        # Poisson rates
-        rates = count_mean*np.ones((num_students, num_students, num_topics))
-        if i >= change_day:
-            rates[:,:,change_topic-1] *= change_magnitude
-
-	# Poisson sampling
-        data = poisson.rvs(rates)
-        samples.append(data)
-
-    # create sparse tensor
-    subs_list = []
-    vals_list = []
-    for i in range(num_days):
-        # data for the day
-        data = samples[i]
-        # sparse subscript extraction
-        day_subs = np.array(data.nonzero())
-        # sparse data extraction
-        day_vals = data[tuple(day_subs)].reshape(-1,1)
-        # add day to subscripts
-        subs_list.append(np.vstack([day_subs,i*np.ones((1,day_subs.shape[1]))]).T)
-        vals_list.append(day_vals)
-
-    S = ttb.sptensor(
-        subs=np.vstack(subs_list),
-        vals=np.vstack(vals_list),
-        shape=(num_students, num_students, num_topics, num_days)
-    )
-
-    return S
-
-##########################################################################
-# Other methods
-##########################################################################
-
 def pyttb_sptensor_to_X_csr(X_tensor, k=None, dtype=np.float64):
     """
     Convert a 3D pyttb.sptensor with shape (I, J, K) into a SciPy CSR matrix
@@ -1175,86 +1124,6 @@ def rmse_from_C(C, B0, block_rows=2048):
 
     return float(np.sqrt(ssq / B0.size))
 
-# def save_slices_from_C(
-#     C,
-#     saved_imgs,
-#     pp,
-#     iteration,
-#     image_shape=(256, 256),
-#     num_channels=4,
-#     num_slices=240,
-#     channel=0,
-#     axial_slice=119,
-#     coronal_index=127,
-#     sagittal_index=127,
-# ):
-#     """
-#     Save image slices from C = B.T without explicitly forming
-
-#         B.reshape(4, 240, 256, 256)
-
-#     This assumes:
-
-#         B.shape == (num_channels * num_slices, I * J)
-
-#     and that the image-plane coefficient index is pyttb/Fortran-order:
-
-#         row = i + I * j
-
-#     Therefore a coefficient vector of length I * J is reshaped with
-#     order='F'.
-
-#     Saved slices match the intended semantics of:
-
-#         B4 = B.reshape(num_channels, num_slices, I, J)
-
-#         axial   = B4[channel, axial_slice, :, :]
-#         coronal = B4[channel, :, coronal_index, :]
-#         sagittal= B4[channel, :, :, sagittal_index]
-#     """
-#     I, J = image_shape
-#     h, m = C.shape
-
-#     expected_h = I * J
-#     expected_m = num_channels * num_slices
-
-#     if h != expected_h:
-#         raise ValueError(f"C has h={h}, expected {expected_h}.")
-
-#     if m != expected_m:
-#         raise ValueError(f"C has m={m}, expected {expected_m}.")
-
-#     q0 = channel * num_slices
-
-#     # Axial:
-#     #
-#     #     B4[channel, axial_slice, :, :]
-#     #
-#     q_axial = q0 + axial_slice
-#     axial = C[:, q_axial].reshape(I, J, order="F").copy()
-
-#     # Coronal:
-#     #
-#     #     B4[channel, :, coronal_index, :]
-#     #
-#     # Fixed first image coordinate i = coronal_index, all j.
-#     z_indices = q0 + np.arange(num_slices)
-#     j_indices = np.arange(J)
-#     coronal_rows = coronal_index + I * j_indices
-#     coronal = C[coronal_rows[:, None], z_indices[None, :]].T.copy()
-
-#     # Sagittal:
-#     #
-#     #     B4[channel, :, :, sagittal_index]
-#     #
-#     # Fixed second image coordinate j = sagittal_index, all i.
-#     i_indices = np.arange(I)
-#     sagittal_rows = i_indices + I * sagittal_index
-#     sagittal = C[sagittal_rows[:, None], z_indices[None, :]].T.copy()
-
-#     saved_imgs[(pp, iteration, "axial")] = axial
-#     saved_imgs[(pp, iteration, "coronal")] = coronal
-#     saved_imgs[(pp, iteration, "sagittal")] = sagittal
 
 def save_slices_from_C(
     C,
@@ -1662,162 +1531,49 @@ def fit_ptotr_sparse(
     return rmse_df, saved_imgs, final_B_by_pp
 
 
+##########################################################################
+# 03 - Changepoint dectection
+##########################################################################
 
-def ml_em_dense(Y, X, stoptol=1e-10, maxiters=100, epsDivZero=1e-10, B=None,verb = False):
-    """
-    Poisson vector-on-vector regression with identity link. Dense covariates.
+def ptotr_changepoint_gen_covariates(tau, len=14):
+    pre_tau = np.tile(np.array([1,0]), (tau, 1)).T
+    post_tau = np.tile(np.array([0,1]), (len-tau, 1)).T
+    return ttb.tensor(np.hstack((pre_tau,post_tau)))
 
-    Fits the model
-        Y ~ Poisson(B @ X)
-    using multiplicative MM updates.
+def ptotr_changepoint_create_data(num_students=10, num_topics=15, num_days=14, count_mean=1,
+                change_topic=3, change_day=9, change_magnitude=20, random_seed=12345):
 
-    Parameters
-    ----------
-    Y : ndarray of shape (m, n)
-        Matrix of count responses. Entries must be nonnegative.
-    X : ndarray of shape (h, n)
-        Matrix of covariates. Entries must be nonnegative, and each column
-        must have positive sum.
-    stoptol : float, default=1e-10
-        Relative tolerance for convergence based on the loglikelihood.
-    maxiters : int, default=100
-        Maximum number of iterations.
-    epsDivZero : float, default=1e-10
-        Small positive constant used to avoid division by zero and log(0).
-    B : ndarray of shape (m, h), optional
-        Initial value for the coefficient matrix. If None, initializes to ones.
+    samples = []
+    np.random.seed(random_seed)
+    for i in range(num_days):
 
-    Returns
-    -------
-    B : ndarray of shape (m, h)
-        Estimated coefficient matrix.
-    lliklast : float
-        Final loglikelihood value.
-    lliks : ndarray
-        Loglikelihood values across iterations, including the initial value.
-    params : tuple
-        Tuple containing (stoptol, maxiters, epsDivZero).
-    """
-    # Convert inputs to NumPy arrays.
-    Y = np.asarray(Y, dtype=float)
-    X = np.asarray(X, dtype=float)
+        # Poisson rates
+        rates = count_mean*np.ones((num_students, num_students, num_topics))
+        if i >= change_day:
+            rates[:,:,change_topic-1] *= change_magnitude
 
-    # Check that Y and X are matrices.
-    if Y.ndim != 2:
-        raise ValueError("Y must be a 2-dimensional array.")
-    if X.ndim != 2:
-        raise ValueError("X must be a 2-dimensional array.")
+	# Poisson sampling
+        data = poisson.rvs(rates)
+        samples.append(data)
 
-    # Dimensions:
-    # Y is m x n, X is h x n, so B must be m x h.
-    m, n = Y.shape
-    h, nX = X.shape
+    # create sparse tensor
+    subs_list = []
+    vals_list = []
+    for i in range(num_days):
+        # data for the day
+        data = samples[i]
+        # sparse subscript extraction
+        day_subs = np.array(data.nonzero())
+        # sparse data extraction
+        day_vals = data[tuple(day_subs)].reshape(-1,1)
+        # add day to subscripts
+        subs_list.append(np.vstack([day_subs,i*np.ones((1,day_subs.shape[1]))]).T)
+        vals_list.append(day_vals)
 
-    # Check that Y and X have the same number of observations.
-    if n != nX:
-        raise ValueError(
-            f"Y and X must have the same number of columns. Got Y.shape={Y.shape} and X.shape={X.shape}."
-        )
+    S = ttb.sptensor(
+        subs=np.vstack(subs_list),
+        vals=np.vstack(vals_list),
+        shape=(num_students, num_students, num_topics, num_days)
+    )
 
-    # Check that Y and X are elementwise nonnegative.
-    if np.any(Y < 0):
-        raise ValueError("Y must be elementwise nonnegative.")
-    if np.any(X < 0):
-        raise ValueError("X must be elementwise nonnegative.")
-
-    # Initialize B if not provided.
-    if B is None:
-        B = np.ones((m, h))
-
-    # Precompute the denominator used in the multiplicative update.
-    # Each row of SX is the vector of row sums of X.
-    SX = np.ones((m, n)) @ X.T
-    SX[SX < epsDivZero] = epsDivZero
-
-    # Compute the initial fitted mean A = B @ X and its loglikelihood.
-    A = B @ X
-    A[A < epsDivZero] = epsDivZero
-    lliks = [np.sum(Y * np.log(A) - A)]
-
-    # Main MM iteration loop.
-    for rr in range(maxiters):
-
-        # Multiplicative update for B.
-        B = B * (((Y / A) @ X.T) / SX)
-
-        # Compute current fitted mean and current loglikelihood.
-        A = B @ X
-        A[A < epsDivZero] = epsDivZero
-        lliklast = np.sum(Y * np.log(A) - A)
-        lliks.append(lliklast)
-
-        # Relative change in loglikelihood for convergence assessment.
-        convcrit = abs((lliks[-1] - lliks[-2]) / lliks[-1])
-
-        if convcrit < stoptol:
-            print("converged after", rr + 1, "iterations with a loglikelihood of", lliks[-1])
-            break
-        elif (rr == maxiters - 1) & verb:
-            print("reached maximum iterations of", maxiters,
-                  "with a relative change in loglikelihood of", convcrit)
-
-    # Convert likelihood history to a NumPy array for convenience.
-    lliks = np.array(lliks)
-
-    params = (stoptol, maxiters, epsDivZero)
-    return B, lliklast, lliks, params
-
-def fit_ml_em_dense(Y,X,B0):
-    p1 = 2622
-    itint = 5
-    itmax = 120
-    remses = []
-    saved_imgs = {}
-
-    # initial value
-    Binit = np.ones((4*240, 256*256))
-
-    for pp in (1, 2):#, 4, 8, 16):
-        print(f'Started fitting ml_em for {pp}% of data. iteration: 0',end = ' ')
-
-        remse0 = []
-        for itt in range(int(np.floor(itmax / itint))):
-
-            # fit the next block of iterations
-            B, lliklast, lliks, params = ml_em_dense(
-                Y = Y[:, :, :(p1 * pp)].reshape(4*240,-1),
-                X = X[:, :, :(p1 * pp)].reshape(256*256,-1),
-                maxiters = itint,
-                stoptol = -1,
-                B = Binit
-            )
-
-            # calculate and store rmse, and set new initial values
-            rmse = np.sqrt(np.sum((B - B0)**2) / B0.size)
-            remse0.append(rmse)
-            Binit = B
-
-            #current total iteration count
-            curr_iter = (itt+1)*itint
-            print(curr_iter, end=" ")
-
-            # Save only the required image slices at iterations 10 and 120
-            if curr_iter in (10, 120):
-                B4 = B.reshape(4, 240, 256, 256)
-                saved_imgs[(pp, curr_iter, "axial")] = B4[0, 119, :, :]
-                saved_imgs[(pp, curr_iter, "coronal")] = B4[0, :, 127, :]
-                saved_imgs[(pp, curr_iter, "sagittal")] = B4[0, :, :, 127]
-        print("")
-        remses.append(remse0)
-
-    # save final rmses
-    percent_labels = [f"{pp}%" for pp in (1, 2)]#, 4, 8, 16)]
-    iteration_labels = list(range(itint, itmax + 1, itint))
-    rmse_df = pd.DataFrame(remses, index=percent_labels, columns=iteration_labels)
-    rmse_df.to_csv("data/ml_em_rmses.csv")
-    print("Saved RMSEs")
-
-    # Save the image slices
-    with open("data/ml_em_slices.pkl", "wb") as f:
-        pickle.dump(saved_imgs, f)
-    print("Saved image slices")
+    return S
