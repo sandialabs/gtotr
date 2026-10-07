@@ -15,9 +15,509 @@ from joblib import Parallel, delayed
 from scipy import sparse
 from scipy.stats import poisson
 from tqdm import tqdm
+from zipfile import ZipFile
 
 from gtotr import ptotr_cp
 
+##########################################################################
+# 01 - ICEWS tensor autoregression
+##########################################################################
+
+FILES = [
+    "events.2004.20150313083407.tab",
+    "events.2005.20150313083555.tab",
+    "events.2006.20150313083752.tab",
+    "events.2007.20150313083959.tab",
+    "events.2008.20150313084156.tab",
+    "events.2009.20150313084349.tab",
+    "events.2010.20150313084533.tab",
+    "events.2011.20150313084656.tab",
+    "events.2012.20150313084811.tab",
+    "events.2013.20150313084929.tab",
+    "events.2014.20160121105408.tab",
+]
+
+COUNTRIES = [
+    "North Korea",
+    "Georgia",
+    "Japan",
+    "Ukraine",
+    "South Korea",
+    "Russian Federation",
+    "United Kingdom",
+    "Germany",
+    "China",
+    "Turkey",
+    "Taiwan",
+    "United States",
+    "Australia",
+    "Egypt",
+    "Iran",
+    "France",
+    "India",
+    "Afghanistan",
+    "Lebanon",
+    "Syria",
+    "Iraq",
+    "Israel",
+    "Pakistan",
+    "Occupied Palestinian Territory",
+    "Sudan",
+]
+
+QUADS = ["V+", "V-", "M+", "M-"]
+
+
+V_POS = {
+    "01", "010", "011", "012", "013", "014", "015", "016", "017", "018", "019",
+    "02", "020", "021", "0211", "0212", "0213", "0214", "022", "023", "0231",
+    "0232", "0233", "0234", "024", "0241", "0242", "0243", "0244", "025",
+    "0251", "0252", "0253", "0254", "0255", "0256", "026", "027", "028",
+    "03", "030", "031", "0311", "0312", "0313", "0314", "032", "033", "0331",
+    "0332", "0333", "0334", "034", "0341", "0342", "0343", "0344", "035",
+    "0351", "0352", "0353", "0354", "0355", "0356", "036", "037", "038", "039",
+    "04", "040", "041", "042", "043", "044", "045", "046", "05", "050", "051",
+    "052", "053", "054", "055", "056", "057",
+}
+
+M_POS = {
+    "06", "060", "061", "062", "063", "064", "07", "070", "071", "072", "073",
+    "074", "075", "08", "080", "081", "0811", "0812", "0813", "0814", "082",
+    "083", "0831", "0832", "0833", "0834", "084", "0841", "0842", "085",
+    "086", "0861", "0862", "0863", "087", "0871", "0872", "0873", "0874",
+}
+
+V_NEG = {
+    "09", "090", "091", "092", "093", "094", "10", "100", "101", "1011",
+    "1012", "1013", "1014", "102", "103", "1031", "1032", "1033", "1034",
+    "104", "1041", "1042", "1043", "1044", "105", "1051", "1052", "1053",
+    "1054", "1055", "1056", "106", "107", "108", "11", "110", "111", "112",
+    "1121", "1122", "1123", "1124", "1125", "113", "114", "115", "116", "12",
+    "120", "121", "1211", "1212", "1213", "122", "1221", "1222", "1223",
+    "1224", "123", "1231", "1232", "1233", "1234", "124", "1241", "1242",
+    "1243", "1244", "1245", "1246", "125", "126", "127", "128", "129", "13",
+    "130", "131", "1311", "1312", "1313", "132", "1321", "1322", "1323",
+    "1324", "133", "134", "135", "136", "137", "138", "1381", "1382",
+    "1383", "1384", "1385", "139",
+}
+
+M_NEG = {
+    "14", "140", "141", "1411", "1412", "1413", "1414", "142", "1421", "1422",
+    "1423", "1424", "143", "1431", "1432", "1433", "1434", "144", "1441",
+    "1442", "1443", "1444", "145", "1451", "1452", "1453", "1454", "15",
+    "150", "151", "152", "153", "154", "16", "160", "161", "162", "1621",
+    "1622", "1623", "163", "164", "165", "166", "1661", "1662", "1663", "17",
+    "170", "171", "1711", "1712", "172", "1721", "1722", "1723", "1724",
+    "173", "174", "175", "18", "180", "181", "182", "1821", "1822", "1823",
+    "183", "1831", "1832", "1833", "184", "185", "186", "19", "190", "191",
+    "192", "193", "194", "195", "196", "20", "200", "201", "202", "203",
+    "204", "2041", "2042",
+}
+
+
+def classify_quad(code: str) -> str | None:
+    """Map a CAMEO code to one of the four event categories."""
+    if code in V_POS:
+        return "V+"
+    if code in V_NEG:
+        return "V-"
+    if code in M_POS:
+        return "M+"
+    if code in M_NEG:
+        return "M-"
+    return None
+
+
+def build_week_lookup(start="2004-01-01", end="2014-07-02"):
+    """Construct weekly time indices for the analysis period."""
+    dates = pd.date_range(start=start, end=end, freq="D")
+    n_weeks = len(dates) // 7
+    dates = dates[: n_weeks * 7]
+
+    week_starts = dates[::7]
+
+    date_to_week = pd.Series(
+        np.repeat(np.arange(n_weeks), 7),
+        index=dates.normalize(),
+    )
+
+    return week_starts, date_to_week
+
+
+def read_events(path: Path) -> pd.DataFrame:
+    """Read and preprocess an extracted ICEWS .tab file."""
+    df = pd.read_csv(
+        path,
+        sep="\t",
+        dtype=str,
+        low_memory=False,
+    )
+
+    return _clean_events(df, path.name)
+
+
+def read_events_from_zip(path: Path) -> pd.DataFrame:
+    """Read and preprocess the .tab file contained in an ICEWS ZIP archive."""
+    with ZipFile(path) as z:
+        members = [
+            member
+            for member in z.namelist()
+            if member.lower().endswith(".tab")
+        ]
+
+        if len(members) != 1:
+            raise ValueError(
+                f"Expected exactly one .tab file in {path.name}; "
+                f"found {len(members)}: {members}"
+            )
+
+        with z.open(members[0]) as f:
+            df = pd.read_csv(
+                f,
+                sep="\t",
+                dtype=str,
+                low_memory=False,
+            )
+
+    return _clean_events(df, path.name)
+
+def _clean_events(df: pd.DataFrame, source_name: str) -> pd.DataFrame:
+    """Select and clean the ICEWS variables needed to construct the tensor."""
+    needed = [
+        "Event Date",
+        "Source Country",
+        "Target Country",
+        "CAMEO Code",
+    ]
+
+    missing = [column for column in needed if column not in df.columns]
+
+    if missing:
+        raise ValueError(
+            f"{source_name} is missing required columns: {missing}"
+        )
+
+    df = df[needed].copy()
+
+    df["Source Country"] = (
+        df["Source Country"]
+        .str.replace('"', "", regex=False)
+        .str.strip()
+    )
+
+    df["Target Country"] = (
+        df["Target Country"]
+        .str.replace('"', "", regex=False)
+        .str.strip()
+    )
+
+    df["CAMEO Code"] = df["CAMEO Code"].astype(str).str.strip()
+
+    df["Event Date"] = (
+        pd.to_datetime(df["Event Date"], errors="coerce")
+        .dt.normalize()
+    )
+
+    df = df.dropna(subset=["Event Date"])
+
+    return df
+
+
+def _read_event_file(data_dir: Path, filename: str) -> pd.DataFrame:
+    """Read an ICEWS file, whether supplied as .tab or .tab.zip."""
+    tab_path = data_dir / filename
+    zip_path = data_dir / f"{filename}.zip"
+
+    if tab_path.exists():
+        print(f"Reading {tab_path.name}")
+        return read_events(tab_path)
+
+    if zip_path.exists():
+        print(f"Reading {zip_path.name}")
+        return read_events_from_zip(zip_path)
+
+    raise FileNotFoundError(
+        f"Could not find {filename} or {filename}.zip in {data_dir}"
+    )
+
+
+def build_icews_tensor(data_dir: Path):
+    """
+    Construct the 25 x 25 x 4 x 548 ICEWS tensor.
+
+    Parameters
+    ----------
+    data_dir : pathlib.Path
+        Directory containing the raw ICEWS .tab and/or .tab.zip files.
+
+    Returns
+    -------
+    yall : numpy.ndarray
+        Four-way tensor containing weekly ICEWS event counts.
+    metadata : dict
+        Metadata describing the tensor dimensions and time index.
+    """
+    data_dir = Path(data_dir)
+
+    week_starts, date_to_week = build_week_lookup()
+
+    country_to_idx = {
+        country: i
+        for i, country in enumerate(COUNTRIES)
+    }
+
+    quad_to_idx = {
+        quad: i
+        for i, quad in enumerate(QUADS)
+    }
+
+    frames = [
+        _read_event_file(data_dir, filename)
+        for filename in FILES
+    ]
+
+    df = pd.concat(frames, ignore_index=True)
+
+    # Retain events for which both the source and target
+    # belong to the selected set of 25 countries.
+    df = df[
+        df["Source Country"].isin(COUNTRIES)
+        & df["Target Country"].isin(COUNTRIES)
+    ].copy()
+
+    # Map detailed CAMEO codes to the four event categories.
+    df["quad"] = df["CAMEO Code"].map(classify_quad)
+    df = df.dropna(subset=["quad"])
+
+    # Assign each event to a weekly time index.
+    df["week"] = df["Event Date"].map(date_to_week)
+    df = df.dropna(subset=["week"]).copy()
+    df["week"] = df["week"].astype(int)
+
+    # Convert categorical labels to integer tensor indices.
+    df["src_idx"] = df["Source Country"].map(country_to_idx)
+    df["tgt_idx"] = df["Target Country"].map(country_to_idx)
+    df["quad_idx"] = df["quad"].map(quad_to_idx)
+
+    # Count events for each tensor entry.
+    counts = (
+        df.groupby(
+            ["src_idx", "tgt_idx", "quad_idx", "week"],
+            sort=False,
+        )
+        .size()
+        .reset_index(name="count")
+    )
+
+    # Initialize all combinations to zero and fill in observed counts.
+    yall = np.zeros(
+        (
+            len(COUNTRIES),
+            len(COUNTRIES),
+            len(QUADS),
+            len(week_starts),
+        ),
+        dtype=np.int32,
+    )
+
+    yall[
+        counts["src_idx"].to_numpy(),
+        counts["tgt_idx"].to_numpy(),
+        counts["quad_idx"].to_numpy(),
+        counts["week"].to_numpy(),
+    ] = counts["count"].to_numpy()
+
+    metadata = {
+        "countries": COUNTRIES,
+        "quads": QUADS,
+        "week_starts": week_starts,
+        "weekly_totals": yall.sum(axis=(0, 1, 2)),
+    }
+
+    return yall, metadata
+
+
+
+def build_autoregression_data(
+    Z: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Construct the ICEWS autoregression covariates and responses.
+
+    Parameters
+    ----------
+    Z : np.ndarray
+        ICEWS tensor of shape (25, 25, 4, T).
+
+    Returns
+    -------
+    X : np.ndarray
+        Covariate tensor of shape (25, 25, 4, 3, T - 5).
+        The fourth mode contains:
+            1. an all-ones tensor,
+            2. Y(t-1),
+            3. 1/4 * sum_{f=2}^5 Y(t-f).
+
+    Y : np.ndarray
+        Response tensor of shape (25, 25, 4, T - 5).
+    """
+    if Z.ndim != 4:
+        raise ValueError(f"Expected a 4-D tensor, got shape {Z.shape}")
+
+    if Z.shape[:3] != (25, 25, 4):
+        raise ValueError(
+            f"Expected first three dimensions to be (25, 25, 4), "
+            f"got {Z.shape[:3]}"
+        )
+
+    T = Z.shape[3]
+
+    if T < 6:
+        raise ValueError("ICEWS data must contain at least 6 time points.")
+
+    n = T - 5
+
+    X = np.zeros((25, 25, 4, 3, n), dtype=float)
+
+    # Mean/trend component
+    X[:, :, :, 0, :] = 1.0
+
+    # Lag-1 component: Y(t-1)
+    X[:, :, :, 1, :] = Z[:, :, :, 4:T - 1]
+
+    # Longer-term component:
+    # 1/4 * [Y(t-2) + Y(t-3) + Y(t-4) + Y(t-5)]
+    X[:, :, :, 2, :] = (
+        Z[:, :, :, 0:T - 5]
+        + Z[:, :, :, 1:T - 4]
+        + Z[:, :, :, 2:T - 3]
+        + Z[:, :, :, 3:T - 2]
+    ) / 4.0
+
+    # Response: Y(t)
+    Y = Z[:, :, :, 5:T]
+
+    return X, Y
+
+    
+def fit_ptotr_init(
+    X: np.ndarray,
+    Y: np.ndarray,
+    rank: int,
+    nit: int = 100,
+    fit_tol: float = 1e-8,
+) -> dict:
+    """Fit one randomly initialized PToTR CP model."""
+
+    model = ptotr_cp(
+        responses=Y,
+        covariates=X,
+    )
+
+    fit = model.fit(
+        rank=rank,
+        maxiters=nit,
+        tolerance=fit_tol,
+        epsDivZero=1e-10,
+    )
+
+    return {
+        "fit": fit,
+        "loglik": float(fit.llf),
+    }
+    
+
+def fit_ptotr_rank(
+    X: np.ndarray,
+    Y: np.ndarray,
+    rank: int,
+    ninit: int = 100,
+    nit: int = 100,
+    fit_tol: float = 1e-8,
+    n_jobs: int = 32,
+) -> dict:
+    """Fit a PToTR CP model using multiple random initializations."""
+
+    if X.shape[-1] != Y.shape[-1]:
+        raise ValueError(
+            "X and Y must have the same number of observations: "
+            f"{X.shape[-1]} != {Y.shape[-1]}"
+        )
+
+    results = Parallel(
+        n_jobs=n_jobs,
+        backend="loky",
+        return_as="generator",
+    )(
+        delayed(fit_ptotr_init)(
+            X=X,
+            Y=Y,
+            rank=rank,
+            nit=nit,
+            fit_tol=fit_tol,
+        )
+        for _ in range(ninit)
+    )
+
+    best_fit = None
+    best_ll = -np.inf
+    best_init = None
+
+    for j, result in enumerate(results, start=1):
+        print(
+            f"rank={rank:2d} | "
+            f"init={j:3d}/{ninit} | "
+            f"loglik={result['loglik']:.6e}"
+        )
+
+        if result["loglik"] > best_ll:
+            best_ll = result["loglik"]
+            best_fit = result["fit"]
+            best_init = j
+
+    return {
+        "fit": best_fit,
+        "loglik": best_ll,
+        "init_best": best_init,
+        "rank": rank,
+    }
+
+
+def fit_ptotr_ranks(
+    X,
+    Y,
+    ranks,
+    ninit=100,
+    nit=100,
+    fit_tol=1e-8,
+    n_jobs=32,
+):
+    """Fit PToTR CP models over a collection of ranks."""
+
+    results = []
+
+    for rank in ranks:
+        result = fit_ptotr_rank(
+            X=X,
+            Y=Y,
+            rank=rank,
+            ninit=ninit,
+            nit=nit,
+            fit_tol=fit_tol,
+            n_jobs=n_jobs,
+        )
+
+        results.append(result)
+
+        print(
+            f"\nFinished rank={rank:2d} | "
+            f"best loglik={result['loglik']:.6e} | "
+            f"best init={result['init_best']}\n"
+        )
+
+    return results
+
+
+    
 ##########################################################################
 # 02 - PET image reconstruction
 ##########################################################################
