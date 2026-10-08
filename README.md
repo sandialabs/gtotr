@@ -2,7 +2,7 @@
 [![ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![mypy](https://img.shields.io/badge/type%20checked-mypy-039dfc)](https://mypy-lang.org)
 
-# Generalized Tensor-on-Tensor Regression(GToTR)
+# Generalized Tensor-on-Tensor Regression (GToTR)
 
 `gtotr` is a Python package for generalized tensor-on-tensor regression, 
 extending [`statsmodels.GLM`](https://www.statsmodels.org/stable/glm.html) to cases 
@@ -13,13 +13,13 @@ Polyadic (CP) models.
 
 ## Getting Started
 
-### Installing 
+### Installing (from PyPI)
 
 ```bash
-$ python -m pip install .
+$ python -m pip install gtotr
 ```
 
-Test the install:
+### Testing
 
 ```bash
 $ python
@@ -31,7 +31,6 @@ $ python
 
 - Documentation: [gtotr.readthedocs.io](https://gtotr.readthedocs.io)
 - Tutorials: [Jupyter notebook tutorials](tutorials/)
-2. Open `gtotr-01-getting-started.ipynb`
 
 ## Contributing
 
