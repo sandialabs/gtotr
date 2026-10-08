@@ -10,3 +10,16 @@ __pycache__
 *.lock
 .venv
 site/
+
+# data
+ptotr_pet*.tns
+ptotr_pet*.npy
+*ptotr_change_point_data*
+events.*.tab*
+sub*nii.gz
+
+# results
+ml_em_*rmses.csv
+ml_em_*slices.pkl
+ptotr_*rmses.csv
+ptotr_*slices.pkl
