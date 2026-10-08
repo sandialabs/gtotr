@@ -1,5 +1,13 @@
 # Quickstart
 
+## Installation
+
+Install the package from PyPI:
+
+```bash
+pip install gtotr
+```
+
 ## Gaussian / Identity example
 
 ```python
